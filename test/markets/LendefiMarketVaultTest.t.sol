@@ -254,12 +254,12 @@ contract LendefiMarketVaultTest is BasicDeploy {
 
     function test_BoostYield() public {
         uint256 boostAmount = 1_000e6;
-        deal(address(usdcInstance), address(marketCoreInstance), boostAmount);
+        deal(address(usdcInstance), address(timelockInstance), boostAmount);
 
         uint256 totalBaseBefore = marketVaultInstance.totalBase();
         uint256 totalAccruedBefore = marketVaultInstance.totalAccruedInterest();
 
-        vm.startPrank(address(marketCoreInstance));
+        vm.startPrank(address(timelockInstance));
         usdcInstance.approve(address(marketVaultInstance), boostAmount);
 
         vm.expectEmit(true, true, true, true);
@@ -408,8 +408,8 @@ contract LendefiMarketVaultTest is BasicDeploy {
 
         // Boost yield
         uint256 boostAmount = 1_000e6;
-        deal(address(usdcInstance), address(marketCoreInstance), boostAmount);
-        vm.startPrank(address(marketCoreInstance));
+        deal(address(usdcInstance), address(timelockInstance), boostAmount);
+        vm.startPrank(address(timelockInstance));
         usdcInstance.approve(address(marketVaultInstance), boostAmount);
         marketVaultInstance.boostYield(alice, boostAmount);
         vm.stopPrank();

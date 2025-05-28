@@ -687,8 +687,8 @@ contract LendefiCoreTest is BasicDeploy {
 
         _borrow(bob, positionId, 10_000e6);
 
-        vm.startPrank(address(marketCoreInstance));
-        deal(address(usdcInstance), address(marketCoreInstance), 1000e6);
+        vm.startPrank(address(timelockInstance));
+        deal(address(usdcInstance), address(timelockInstance), 1000e6);
         usdcInstance.approve(address(marketVaultInstance), 1000e6);
         marketVaultInstance.boostYield(bob, 1000e6);
         vm.stopPrank();
