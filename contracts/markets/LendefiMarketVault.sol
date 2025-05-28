@@ -174,7 +174,7 @@ contract LendefiMarketVault is
      */
     function boostYield(address user, uint256 amount)
         external
-        onlyRole(LendefiConstants.PROTOCOL_ROLE)
+        onlyRole(LendefiConstants.MANAGER_ROLE)
         whenNotPaused
         nonReentrant
     {
