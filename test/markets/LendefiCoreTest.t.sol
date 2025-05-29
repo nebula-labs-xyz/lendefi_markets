@@ -220,7 +220,8 @@ contract LendefiCoreTest is BasicDeploy {
             rewardAmount: 5_000 ether,
             rewardInterval: 365 days,
             rewardableSupply: 500_000e6,
-            liquidatorThreshold: 50_000 ether
+            liquidatorThreshold: 50_000 ether,
+            flashLoanFee: 10 // 10 basis points (0.1%)
         });
 
         vm.prank(address(timelockInstance));
@@ -247,7 +248,8 @@ contract LendefiCoreTest is BasicDeploy {
             rewardAmount: 5_000 ether,
             rewardInterval: 365 days,
             rewardableSupply: 500_000e6,
-            liquidatorThreshold: 50_000 ether
+            liquidatorThreshold: 50_000 ether,
+            flashLoanFee: 10
         });
 
         vm.prank(address(timelockInstance));
