@@ -68,10 +68,10 @@ contract LendefiCore is Initializable, AccessControlUpgradeable, ReentrancyGuard
 
     // ========== STRUCTS ==========
     struct ProtocolConfig {
-        uint256 profitTargetRate; // Rate in WAD
-        uint256 borrowRate; // Rate in WAD
+        uint256 profitTargetRate; // Rate in 1e6
+        uint256 borrowRate; // Rate in 1e6
         uint256 rewardAmount; // Amount of governance tokens
-        uint256 rewardInterval; // Duration in seconds
+        uint256 rewardInterval; // Duration in blocks
         uint256 rewardableSupply; // Amount of base asset
         uint256 liquidatorThreshold; // Amount of governance tokens
     }
@@ -141,7 +141,7 @@ contract LendefiCore is Initializable, AccessControlUpgradeable, ReentrancyGuard
 
     uint256 public totalBorrow;
     uint256 public totalAccruedBorrowerInterest;
-    uint256 public WAD;
+    uint256 public baseDecimals;
 
     /// @notice Information about the currently pending upgrade
     Market public market;
@@ -276,13 +276,13 @@ contract LendefiCore is Initializable, AccessControlUpgradeable, ReentrancyGuard
         marketFactory = msg.sender;
         govToken = govToken_;
 
-        // Initialize default parameters using dynamic WAD
+        // Initialize default parameters using dynamic baseDecimals
         mainConfig = ProtocolConfig({
             profitTargetRate: 0.01e6, // 1%
             borrowRate: 0.06e6, // 6%
             rewardAmount: 2_000 ether, // 2,000 governance tokens
-            rewardInterval: 180 days, // 180 days
-            rewardableSupply: 100_000 * WAD, // 100,000 base asset units
+            rewardInterval: 180 * 24 * 60 * 5, // 180 days in blocks
+            rewardableSupply: 100_000 * baseDecimals, // 100,000 base asset units
             liquidatorThreshold: 20_000 ether // 20,000 governance tokens
         });
 
@@ -297,7 +297,7 @@ contract LendefiCore is Initializable, AccessControlUpgradeable, ReentrancyGuard
      *      2. Setting the market info in the market struct
      *      3. Setting the base asset in the baseAsset struct
      *      4. Setting the base vault in the baseVault struct
-     *      5. Setting the WAD value based on the asset decimals
+     *      5. Setting the baseDecimals value based on the asset decimals
      *      6. Emitting the initialized event
      *
      * The function ensures that the market is initialized successfully and emits the appropriate events.
@@ -313,7 +313,7 @@ contract LendefiCore is Initializable, AccessControlUpgradeable, ReentrancyGuard
      *   - Sets the market info in the market struct
      *   - Sets the base asset in the baseAsset struct
      *   - Sets the base vault in the baseVault struct
-     *   - Sets the WAD value based on the asset decimals
+     *   - Sets the baseDecimals value based on the asset decimals
      *
      * @custom:emits
      *   - Initialized(baseAsset)
@@ -330,7 +330,7 @@ contract LendefiCore is Initializable, AccessControlUpgradeable, ReentrancyGuard
         baseAsset = marketInfo.baseAsset;
         baseVault = ILendefiMarketVault(marketInfo.baseVault);
         uint8 assetDecimals = IERC20Metadata(baseAsset).decimals();
-        WAD = 10 ** assetDecimals;
+        baseDecimals = 10 ** assetDecimals;
         emit Initialized(marketInfo.baseAsset);
     }
 
@@ -354,7 +354,7 @@ contract LendefiCore is Initializable, AccessControlUpgradeable, ReentrancyGuard
         if (config.borrowRate < 0.01e6) revert InvalidBorrowRate();
         if (config.rewardAmount > 10_000 ether) revert InvalidRewardAmount();
         if (config.rewardInterval < 90 days) revert InvalidInterval();
-        if (config.rewardableSupply < 20_000 * LendefiConstants.WAD) revert InvalidSupplyAmount();
+        if (config.rewardableSupply < 20_000 * baseDecimals) revert InvalidSupplyAmount();
         if (config.liquidatorThreshold < 10 ether) revert InvalidLiquidatorThreshold();
 
         // Update the mainConfig struct
@@ -915,7 +915,7 @@ contract LendefiCore is Initializable, AccessControlUpgradeable, ReentrancyGuard
         totalAccruedBorrowerInterest += interestAccrued;
 
         uint256 liquidationFee = getPositionLiquidationFee(user, positionId);
-        uint256 fee = ((debtWithInterest * liquidationFee) / WAD);
+        uint256 fee = ((debtWithInterest * liquidationFee) / baseDecimals);
         uint256 totalCost = debtWithInterest + fee;
 
         // Slippage protection on total liquidation cost
@@ -993,7 +993,7 @@ contract LendefiCore is Initializable, AccessControlUpgradeable, ReentrancyGuard
      * @dev Health factor is the ratio of weighted collateral to debt, below 1.0 is liquidatable
      * @param user Address of the position owner
      * @param positionId ID of the position to calculate health for
-     * @return The position's health factor in WAD format (1.0 = 1e6)
+     * @return The position's health factor in baseDecimals format (1.0 = 1e6)
      * @custom:error-cases
      *   - InvalidPosition: Thrown when position doesn't exist
      */
@@ -1001,7 +1001,7 @@ contract LendefiCore is Initializable, AccessControlUpgradeable, ReentrancyGuard
         uint256 debt = calculateDebtWithInterest(user, positionId);
         if (debt == 0) return type(uint256).max;
         (, uint256 liqLevel,) = calculateLimits(user, positionId);
-        return (liqLevel * WAD) / debt;
+        return (liqLevel * baseDecimals) / debt;
     }
 
     /**
@@ -1031,16 +1031,16 @@ contract LendefiCore is Initializable, AccessControlUpgradeable, ReentrancyGuard
 
             // Use FullMath.mulDiv for maximum precision without overflow
             // First calculate the base value conversion
-            uint256 assetValueInWAD =
-                FullMath.mulDiv(amount * params.price, WAD, paramsBase.price * (10 ** params.decimals));
+            uint256 assetValueInbaseDecimals =
+                FullMath.mulDiv(amount * params.price, baseDecimals, paramsBase.price * (10 ** params.decimals));
 
-            value += assetValueInWAD;
+            value += assetValueInbaseDecimals;
 
             // Calculate credit with full precision using mulDiv
-            credit += FullMath.mulDiv(assetValueInWAD, params.borrowThreshold, 1000);
+            credit += FullMath.mulDiv(assetValueInbaseDecimals, params.borrowThreshold, 1000);
 
             // Calculate liquidation level with full precision using mulDiv
-            liqLevel += FullMath.mulDiv(assetValueInWAD, params.liquidationThreshold, 1000);
+            liqLevel += FullMath.mulDiv(assetValueInbaseDecimals, params.liquidationThreshold, 1000);
         }
     }
 
@@ -1069,7 +1069,7 @@ contract LendefiCore is Initializable, AccessControlUpgradeable, ReentrancyGuard
      * @dev Based on the highest risk tier among the position's collateral assets
      * @param user Address of the position owner
      * @param positionId ID of the position to query
-     * @return The liquidation fee percentage in WAD format (e.g., 0.05e6 = 5%)
+     * @return The liquidation fee percentage in baseDecimals format (e.g., 0.05e6 = 5%)
      */
     function getPositionLiquidationFee(address user, uint256 positionId)
         public
@@ -1136,7 +1136,7 @@ contract LendefiCore is Initializable, AccessControlUpgradeable, ReentrancyGuard
     /**
      * @notice Calculates the current supply interest rate for liquidity providers
      * @dev Based on utilization, protocol fees, and available liquidity
-     * @return The current annual supply interest rate in WAD format
+     * @return The current annual supply interest rate in baseDecimals format
      */
     function getSupplyRate() public view returns (uint256) {
         return LendefiRates.getSupplyRate(
@@ -1152,7 +1152,7 @@ contract LendefiCore is Initializable, AccessControlUpgradeable, ReentrancyGuard
      * @notice Calculates the current borrow interest rate for a specific collateral tier
      * @dev Based on utilization, base rate, supply rate, and tier-specific jump rate
      * @param tier The collateral tier to calculate the borrow rate for
-     * @return The current annual borrow interest rate in WAD format
+     * @return The current annual borrow interest rate in baseDecimals format
      */
     function getBorrowRate(IASSETS.CollateralTier tier) public view returns (uint256) {
         return LendefiRates.getBorrowRate(
@@ -1182,8 +1182,8 @@ contract LendefiCore is Initializable, AccessControlUpgradeable, ReentrancyGuard
         // Health factor < 1.0 means position is undercollateralized based on liquidation parameters
         uint256 healthFactorValue = healthFactor(user, positionId);
 
-        // Compare against WAD (1.0 in fixed-point representation)
-        return healthFactorValue < WAD;
+        // Compare against baseDecimals (1.0 in fixed-point representation)
+        return healthFactorValue < baseDecimals;
     }
 
     /**
