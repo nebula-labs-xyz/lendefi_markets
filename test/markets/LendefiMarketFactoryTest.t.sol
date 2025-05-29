@@ -82,31 +82,36 @@ contract LendefiMarketFactoryTest is BasicDeploy {
     function test_SetImplementations() public {
         LendefiCore newCoreImpl = new LendefiCore();
         LendefiMarketVault newVaultImpl = new LendefiMarketVault();
+        LendefiVault posVaultImpl = new LendefiVault();
 
+        vm.expectEmit(true, true, true, true);
+        emit LendefiMarketFactory.ImplementationsSet(address(newCoreImpl), address(newVaultImpl), address(posVaultImpl));
+        
         vm.prank(address(timelockInstance));
-        vm.expectEmit(true, true, false, true);
-        emit LendefiMarketFactory.ImplementationsSet(address(newCoreImpl), address(newVaultImpl));
-        marketFactoryInstance.setImplementations(address(newCoreImpl), address(newVaultImpl));
+        marketFactoryInstance.setImplementations(address(newCoreImpl), address(newVaultImpl), address(posVaultImpl));
 
         assertEq(marketFactoryInstance.coreImplementation(), address(newCoreImpl));
         assertEq(marketFactoryInstance.vaultImplementation(), address(newVaultImpl));
+        assertEq(marketFactoryInstance.positionVaultImplementation(), address(posVaultImpl));
     }
 
     function test_Revert_SetImplementations_Unauthorized() public {
         LendefiCore newCoreImpl = new LendefiCore();
 
+        LendefiVault posVaultImpl = new LendefiVault();
+        
         vm.prank(alice);
         vm.expectRevert(
             abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, alice, DEFAULT_ADMIN_ROLE)
         );
-        marketFactoryInstance.setImplementations(address(newCoreImpl), address(0));
+        marketFactoryInstance.setImplementations(address(newCoreImpl), address(0), address(posVaultImpl));
     }
 
     // ============ Market Creation Tests ============
 
     function test_CreateMarket_USDC() public {
         // USDC market is already created in setup
-        LendefiCore.Market memory market = marketFactoryInstance.getMarketInfo(address(usdcInstance));
+        IPROTOCOL.Market memory market = marketFactoryInstance.getMarketInfo(address(usdcInstance));
 
         assertEq(market.baseAsset, address(usdcInstance));
         assertEq(market.name, "Lendefi Yield Token"); // This is the name used in deployMarketsWithUSDC
@@ -123,7 +128,7 @@ contract LendefiMarketFactoryTest is BasicDeploy {
         marketFactoryInstance.createMarket(address(daiToken), "Lendefi DAI Market", "lfDAI");
 
         // Verify market was created
-        LendefiCore.Market memory createdMarket = marketFactoryInstance.getMarketInfo(address(daiToken));
+        IPROTOCOL.Market memory createdMarket = marketFactoryInstance.getMarketInfo(address(daiToken));
         assertEq(createdMarket.baseAsset, address(daiToken));
         assertEq(createdMarket.name, "Lendefi DAI Market");
         assertTrue(createdMarket.core != address(0));
@@ -145,7 +150,7 @@ contract LendefiMarketFactoryTest is BasicDeploy {
 
         marketFactoryInstance.createMarket(address(usdtToken), "Lendefi USDT Market", "lfUSDT");
 
-        LendefiCore.Market memory createdMarket = marketFactoryInstance.getMarketInfo(address(usdtToken));
+        IPROTOCOL.Market memory createdMarket = marketFactoryInstance.getMarketInfo(address(usdtToken));
         LendefiCore usdtCore = LendefiCore(createdMarket.core);
 
         // Verify WAD is correctly set for 6 decimal token
@@ -176,7 +181,7 @@ contract LendefiMarketFactoryTest is BasicDeploy {
     // ============ Market Query Tests ============
 
     function test_GetMarketInfo() public {
-        LendefiCore.Market memory market = marketFactoryInstance.getMarketInfo(address(usdcInstance));
+        IPROTOCOL.Market memory market = marketFactoryInstance.getMarketInfo(address(usdcInstance));
 
         assertEq(market.baseAsset, address(usdcInstance));
         assertEq(market.core, address(marketCoreInstance));
@@ -276,7 +281,7 @@ contract LendefiMarketFactoryTest is BasicDeploy {
         vm.prank(address(timelockInstance));
         marketFactoryInstance.createMarket(address(daiToken), "Lendefi DAI Market", "lfDAI");
 
-        LendefiCore.Market memory daiMarket = marketFactoryInstance.getMarketInfo(address(daiToken));
+        IPROTOCOL.Market memory daiMarket = marketFactoryInstance.getMarketInfo(address(daiToken));
         LendefiCore daiCore = LendefiCore(daiMarket.core);
         LendefiMarketVault daiVault = LendefiMarketVault(daiMarket.baseVault);
 
