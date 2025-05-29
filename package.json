@@ -22,7 +22,7 @@
     "lint:sol-logic": "solhint -c .solhint.json -f table 'contracts/ecosystem/*.sol' 'contracts/lender/*.sol' 'contracts/liquidator/*.sol' 'script/**/*.sol'",
     "lint:sol-tests": "solhint -c .solhint.tests.json -f table 'test/ecosystem/*.sol'",
     "prepare": "husky",
-    "slither:check": "slither contracts/lender/Lendefi.sol --solc-remaps @openzeppelin/=$(pwd)/node_modules/@openzeppelin/ --filter-paths '@openzeppelin'",
+    "slither:check": "slither contracts/markets/LendefiCore.sol --solc-remaps '@openzeppelin/=$(pwd)/node_modules/@openzeppelin/ @uniswap/=$(pwd)/node_modules/@uniswap/' --filter-paths '@openzeppelin,@uniswap'",
     "solhint": "./node_modules/.bin/solhint -f table contracts/**/*.sol",
     "test": "forge clean && forge build && forge test -vvv --ffi",
     "test:unit": "forge test --match-contract BasicDeployTest-vvv --ffi",
