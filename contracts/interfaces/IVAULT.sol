@@ -7,7 +7,7 @@ pragma solidity 0.8.23;
  */
 interface IVAULT {
     /// @notice Returns the address of the protocol that controls this vault
-    function protocol() external view returns (address);
+    function core() external view returns (address);
 
     /// @notice Returns the address of the vault owner
     function owner() external view returns (address);
@@ -25,4 +25,8 @@ interface IVAULT {
     /// @param tokens Array of token addresses to liquidate
     /// @param liquidator Address receiving the tokens
     function liquidate(address[] calldata tokens, address liquidator) external;
+
+    /// @notice Initializes the vault
+    /// @param _core Address of the protocol that controls this vault
+    function initialize(address _core) external;
 }
