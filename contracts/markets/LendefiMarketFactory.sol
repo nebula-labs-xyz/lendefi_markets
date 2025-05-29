@@ -321,7 +321,7 @@ contract LendefiMarketFactory is Initializable, AccessControlUpgradeable, UUPSUp
 
         // Initialize vault contract through proxy
         bytes memory vaultData = abi.encodeCall(
-            LendefiMarketVault.initialize, (timelock, address(coreInstance), baseAsset, ecosystem, name, symbol)
+            LendefiMarketVault.initialize, (timelock, address(coreInstance), baseAsset, ecosystem, assetsModule, name, symbol)
         );
         ERC1967Proxy vaultProxy = new ERC1967Proxy(address(baseVault), vaultData);
         LendefiMarketVault vaultInstance = LendefiMarketVault(payable(address(vaultProxy)));
