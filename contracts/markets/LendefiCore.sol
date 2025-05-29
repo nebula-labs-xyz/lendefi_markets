@@ -1139,13 +1139,7 @@ contract LendefiCore is
      * @return The current annual borrow interest rate in baseDecimals format
      */
     function getBorrowRate(IASSETS.CollateralTier tier) public view returns (uint256) {
-        return LendefiRates.getBorrowRate(
-            baseVault.utilization(),
-            mainConfig.borrowRate,
-            mainConfig.profitTargetRate,
-            getSupplyRate(),
-            assetsModule.getTierJumpRate(tier)
-        );
+        return baseVault.getBorrowRate(tier);
     }
 
     /**
