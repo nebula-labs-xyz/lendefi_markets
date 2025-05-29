@@ -58,7 +58,11 @@ contract LendefiMarketFactoryTest is BasicDeploy {
     function test_Revert_FactoryInitializeTwice() public {
         vm.expectRevert();
         marketFactoryInstance.initialize(
-            address(timelockInstance), address(treasuryInstance), address(assetsInstance), address(tokenInstance), address(0)
+            address(timelockInstance),
+            address(treasuryInstance),
+            address(assetsInstance),
+            address(tokenInstance),
+            address(0)
         );
     }
 
@@ -67,7 +71,9 @@ contract LendefiMarketFactoryTest is BasicDeploy {
 
         // The factory uses InvalidInitialization when admin is zero
         vm.expectRevert();
-        newFactory.initialize(address(0), address(treasuryInstance), address(assetsInstance), address(tokenInstance), address(0));
+        newFactory.initialize(
+            address(0), address(treasuryInstance), address(assetsInstance), address(tokenInstance), address(0)
+        );
     }
 
     // ============ Implementation Management Tests ============
@@ -217,13 +223,13 @@ contract LendefiMarketFactoryTest is BasicDeploy {
     // ============ Integration Tests ============
 
     function test_Integration_MultiMarketOperations() public {
-        // Deploy proper mock oracle for WETH  
+        // Deploy proper mock oracle for WETH
         WETHPriceConsumerV3 wethOracle = new WETHPriceConsumerV3();
         wethOracle.setPrice(int256(2500e8)); // $2500 per ETH
-        
+
         // First configure WETH as a valid collateral asset
         vm.startPrank(address(timelockInstance));
-        
+
         // Configure WETH as an asset in the assets module
         assetsInstance.updateAssetConfig(
             address(wethInstance),
@@ -242,7 +248,7 @@ contract LendefiMarketFactoryTest is BasicDeploy {
                 poolConfig: IASSETS.UniswapPoolConfig({pool: address(0), twapPeriod: 0, active: 0})
             })
         );
-        
+
         // Configure DAI as an asset in the assets module (needed for credit limit calculations)
         WETHPriceConsumerV3 daiOracle = new WETHPriceConsumerV3();
         daiOracle.setPrice(int256(1e8)); // $1 per DAI
@@ -285,7 +291,7 @@ contract LendefiMarketFactoryTest is BasicDeploy {
 
         vm.startPrank(alice);
         daiToken.approve(address(daiCore), daiAmount);
-        daiCore.supplyLiquidity(daiAmount, daiVault.previewDeposit(daiAmount), 100);
+        daiCore.depositLiquidity(daiAmount, daiVault.previewDeposit(daiAmount), 100);
         vm.stopPrank();
 
         // Create position in DAI market
