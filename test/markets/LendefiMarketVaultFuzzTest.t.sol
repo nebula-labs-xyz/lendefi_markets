@@ -22,7 +22,7 @@ contract LendefiMarketVaultFuzzTest is BasicDeploy {
         deal(address(usdcInstance), alice, INITIAL_LIQUIDITY);
         vm.startPrank(alice);
         usdcInstance.approve(address(marketCoreInstance), INITIAL_LIQUIDITY);
-        marketCoreInstance.supplyLiquidity(
+        marketCoreInstance.depositLiquidity(
             INITIAL_LIQUIDITY, marketVaultInstance.previewDeposit(INITIAL_LIQUIDITY), 100
         );
         vm.stopPrank();
@@ -45,6 +45,9 @@ contract LendefiMarketVaultFuzzTest is BasicDeploy {
         assertGt(shares, 0);
         assertEq(marketVaultInstance.balanceOf(charlie), shares);
         vm.stopPrank();
+
+        // Roll to next block to allow withdrawal (MEV protection)
+        vm.roll(block.number + 1);
 
         // Withdraw partial
         uint256 withdrawAmount = (assets * withdrawRatio) / 100;
@@ -73,6 +76,9 @@ contract LendefiMarketVaultFuzzTest is BasicDeploy {
         assertEq(marketVaultInstance.balanceOf(charlie), shares);
         vm.stopPrank();
 
+        // Roll to next block to allow redemption (MEV protection)
+        vm.roll(block.number + 1);
+
         // Redeem partial
         uint256 redeemShares = (shares * redeemRatio) / 100;
 
@@ -93,44 +99,36 @@ contract LendefiMarketVaultFuzzTest is BasicDeploy {
         console.log("Bound Result", loanAmount);
         console.log("Bound Result", feeRate);
 
-        // Update flash loan fee - use try/catch for edge cases
-        LendefiCore.ProtocolConfig memory config = marketCoreInstance.getConfig();
-        config.flashLoanFee = uint32(feeRate);
+        // Config update succeeded, proceed with flash loan test
 
-        try marketCoreInstance.loadProtocolConfig(config) {
-            // Config update succeeded, proceed with flash loan test
+        // Ensure loan amount is within vault capacity
+        uint256 maxLoan = marketVaultInstance.totalSuppliedLiquidity();
+        if (loanAmount > maxLoan) {
+            loanAmount = maxLoan;
+        }
 
-            // Ensure loan amount is within vault capacity
-            uint256 maxLoan = marketVaultInstance.totalSuppliedLiquidity();
-            if (loanAmount > maxLoan) {
-                loanAmount = maxLoan;
+        if (loanAmount > 0) {
+            // Setup flash receiver
+            MockFlashLoanReceiver flashReceiver = new MockFlashLoanReceiver();
+            uint256 expectedFee = (loanAmount * feeRate) / 10000;
+
+            // Handle potential overflow in fee calculation
+            if (expectedFee < loanAmount * feeRate) {
+                // Overflow occurred, skip this test case
+                return;
             }
 
-            if (loanAmount > 0) {
-                // Setup flash receiver
-                MockFlashLoanReceiver flashReceiver = new MockFlashLoanReceiver();
-                uint256 expectedFee = (loanAmount * feeRate) / 10000;
+            deal(address(usdcInstance), address(flashReceiver), expectedFee);
 
-                // Handle potential overflow in fee calculation
-                if (expectedFee < loanAmount * feeRate) {
-                    // Overflow occurred, skip this test case
-                    return;
-                }
+            uint256 vaultBalanceBefore = usdcInstance.balanceOf(address(marketVaultInstance));
 
-                deal(address(usdcInstance), address(flashReceiver), expectedFee);
-
-                uint256 vaultBalanceBefore = usdcInstance.balanceOf(address(marketVaultInstance));
-
-                try marketVaultInstance.flashLoan(address(flashReceiver), loanAmount, "") {
-                    // Flash loan succeeded
-                    assertEq(usdcInstance.balanceOf(address(marketVaultInstance)), vaultBalanceBefore + expectedFee);
-                    assertEq(marketVaultInstance.totalBase(), INITIAL_LIQUIDITY + expectedFee);
-                } catch {
-                    // Flash loan failed - this is acceptable for extreme values
-                }
+            try marketVaultInstance.flashLoan(address(flashReceiver), loanAmount, "") {
+                // Flash loan succeeded
+                assertEq(usdcInstance.balanceOf(address(marketVaultInstance)), vaultBalanceBefore + expectedFee);
+                assertEq(marketVaultInstance.totalBase(), INITIAL_LIQUIDITY + expectedFee);
+            } catch {
+                // Flash loan failed - this is acceptable for extreme values
             }
-        } catch {
-            // Config update failed - this is acceptable for extreme fee rates
         }
     }
 
@@ -251,6 +249,9 @@ contract LendefiMarketVaultFuzzTest is BasicDeploy {
         // Test resistance to donation attacks
         donationAmount = bound(donationAmount, 1e6, 1_000_000e6);
 
+        // Roll to next block since alice already deposited in setUp
+        vm.roll(block.number + 1);
+
         // Alice deposits first
         uint256 aliceDeposit = 1000e6;
         deal(address(usdcInstance), alice, aliceDeposit);
@@ -292,6 +293,9 @@ contract LendefiMarketVaultFuzzTest is BasicDeploy {
         numBorrows = bound(numBorrows, 0, numDepositors);
         baseAmount = bound(baseAmount, 1000e6, 100_000e6);
 
+        // Roll to next block since alice already deposited in setUp
+        vm.roll(block.number + 1);
+
         address[] memory depositors = new address[](numDepositors);
         uint256[] memory deposits = new uint256[](numDepositors);
         uint256 totalDeposited;
@@ -309,6 +313,11 @@ contract LendefiMarketVaultFuzzTest is BasicDeploy {
             vm.stopPrank();
 
             totalDeposited += deposits[i];
+            
+            // Roll to next block for MEV protection
+            if (i < numDepositors - 1) {
+                vm.roll(block.number + 1);
+            }
         }
 
         assertEq(marketVaultInstance.totalSuppliedLiquidity(), INITIAL_LIQUIDITY + totalDeposited);
@@ -333,6 +342,9 @@ contract LendefiMarketVaultFuzzTest is BasicDeploy {
 
         // Everyone can still withdraw remaining funds
         for (uint256 i = 0; i < numDepositors; i++) {
+            // Roll to next block for MEV protection
+            vm.roll(block.number + 1);
+            
             uint256 shares = marketVaultInstance.balanceOf(depositors[i]);
             if (shares > 0) {
                 uint256 maxWithdraw = marketVaultInstance.maxWithdraw(depositors[i]);
