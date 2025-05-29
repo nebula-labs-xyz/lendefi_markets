@@ -3,7 +3,7 @@ pragma solidity 0.8.23;
 
 // Add interface for PoR feed
 interface IPoRFeed {
-    function initialize(address _asset, address _lendefiProtocol, address _updater, address _owner) external;
+    function initialize(address _asset, address _updater, address _owner) external;
     function decimals() external view returns (uint8);
     function description() external view returns (string memory);
     function version() external view returns (uint256);
