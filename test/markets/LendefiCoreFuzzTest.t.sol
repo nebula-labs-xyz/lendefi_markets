@@ -2,11 +2,8 @@
 pragma solidity 0.8.23;
 
 import "../BasicDeploy.sol";
-import {MockRWA} from "../../contracts/mock/MockRWA.sol";
-import {RWAPriceConsumerV3} from "../../contracts/mock/RWAOracle.sol";
 import {WETHPriceConsumerV3} from "../../contracts/mock/WETHOracle.sol";
 import {MockPriceOracle} from "../../contracts/mock/MockPriceOracle.sol";
-import {LendefiCore} from "../../contracts/markets/LendefiCore.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 contract LendefiCoreFuzzTest is BasicDeploy {
@@ -388,8 +385,8 @@ contract LendefiCoreFuzzTest is BasicDeploy {
                 vm.stopPrank();
 
                 // Verify liquidation
-                LendefiCore.UserPosition memory position = marketCoreInstance.getUserPositions(bob)[0];
-                assertEq(uint8(position.status), uint8(LendefiCore.PositionStatus.LIQUIDATED));
+                IPROTOCOL.UserPosition memory position = marketCoreInstance.getUserPositions(bob)[0];
+                assertEq(uint8(position.status), uint8(IPROTOCOL.PositionStatus.LIQUIDATED));
                 assertEq(wethInstance.balanceOf(liquidator), initialCollateral);
             }
         }
@@ -403,7 +400,7 @@ contract LendefiCoreFuzzTest is BasicDeploy {
         borrowRate = bound(borrowRate, 0.01e6, 0.5e6); // 1% - 50%
         flashFee = bound(flashFee, 1, 100); // 0.01% - 1%
 
-        LendefiCore.ProtocolConfig memory config = LendefiCore.ProtocolConfig({
+        IPROTOCOL.ProtocolConfig memory config = IPROTOCOL.ProtocolConfig({
             profitTargetRate: profitTarget,
             borrowRate: borrowRate,
             rewardAmount: 1_000 ether,
@@ -415,7 +412,7 @@ contract LendefiCoreFuzzTest is BasicDeploy {
         vm.prank(address(timelockInstance));
         marketCoreInstance.loadProtocolConfig(config);
 
-        LendefiCore.ProtocolConfig memory loadedConfig = marketCoreInstance.getConfig();
+        IPROTOCOL.ProtocolConfig memory loadedConfig = marketCoreInstance.getConfig();
         assertEq(loadedConfig.profitTargetRate, profitTarget);
         assertEq(loadedConfig.borrowRate, borrowRate);
     }
