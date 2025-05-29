@@ -3,7 +3,26 @@ pragma solidity 0.8.23;
 
 /**
  * @title LendefiPositionVault
- * @notice Minimal vault for isolating user position collateral
+ * @author alexei@nebula-labs(dot)xyz
+ * @notice Minimal isolated vault for holding individual user position collateral assets
+ * @dev This contract serves as a secure custody solution for user collateral within the Lendefi protocol.
+ *      Each user position gets its own dedicated vault instance to ensure complete asset isolation
+ *      and prevent cross-contamination between different user positions.
+ *
+ *      Key characteristics:
+ *      - Deployed as minimal proxy clones for gas efficiency
+ *      - Provides complete asset isolation per user position
+ *      - Only the LendefiCore contract can perform operations
+ *      - Supports both individual withdrawals and batch liquidations
+ *      - Immutable ownership once set (prevents ownership hijacking)
+ *
+ *      Security model:
+ *      - All operations restricted to the LendefiCore contract
+ *      - Owner can only be set once during position creation
+ *      - No direct user interaction (all operations via core)
+ *      - Supports emergency liquidation scenarios
+ * @custom:security-contact security@nebula-labs.xyz
+ * @custom:copyright Copyright (c) 2025 Nebula Holding Inc. All rights reserved.
  */
 import {IERC20, SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
@@ -11,26 +30,103 @@ import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Ini
 contract LendefiPositionVault is Initializable {
     using SafeERC20 for IERC20;
 
+    // ========== STATE VARIABLES ==========
+
+    /// @notice Address of the LendefiCore contract that controls this vault
+    /// @dev Only this address can perform operations on the vault, ensuring centralized control
+    ///      and preventing unauthorized access to user collateral assets
     address public core;
+
+    /// @notice Address of the user who owns the collateral stored in this vault
+    /// @dev Set once during position creation and cannot be changed thereafter.
+    ///      All withdrawn assets are transferred to this address unless liquidated.
     address public owner;
 
+    // ========== ERRORS ==========
+
+    /// @notice Thrown when a caller other than the LendefiCore contract attempts an operation
     error OnlyCORE();
+
+    /// @notice Thrown when attempting to change the owner after it has already been set
     error CantChangeOwner();
 
+    // ========== INITIALIZATION ==========
+
+    /**
+     * @notice Initializes the position vault with the controlling core contract
+     * @dev This function is called immediately after the vault is deployed as a minimal proxy.
+     *      It establishes the connection between this vault and the LendefiCore contract
+     *      that will manage all operations on the stored collateral.
+     * @param _core Address of the LendefiCore contract that will control this vault
+     *
+     * @custom:requirements
+     *   - Function can only be called once during deployment
+     *   - _core address will be the only address authorized to perform operations
+     *
+     * @custom:state-changes
+     *   - Sets the core address to _core
+     *   - Initializes the contract for proxy usage
+     *
+     * @custom:access-control Only callable during contract initialization
+     * @custom:proxy-pattern Used with OpenZeppelin's minimal proxy factory pattern
+     */
     function initialize(address _core) external initializer {
         core = _core;
     }
 
+    // ========== OWNERSHIP MANAGEMENT ==========
+
+    /**
+     * @notice Sets the owner of this position vault (can only be called once)
+     * @dev Establishes the user who owns the collateral stored in this vault.
+     *      This function can only be called once to prevent ownership manipulation
+     *      and ensure that collateral always belongs to the correct user.
+     * @param _owner Address of the user who will own the collateral in this vault
+     *
+     * @custom:requirements
+     *   - Caller must be the LendefiCore contract
+     *   - Owner must not have been set previously (must be zero address)
+     *
+     * @custom:state-changes
+     *   - Sets the owner address to _owner
+     *   - Makes the owner address immutable (cannot be changed again)
+     *
+     * @custom:access-control Restricted to LendefiCore contract only
+     * @custom:security Prevents ownership hijacking by making owner immutable after first set
+     * @custom:error-cases
+     *   - OnlyCORE: When caller is not the LendefiCore contract
+     *   - CantChangeOwner: When owner has already been set previously
+     */
     function setOwner(address _owner) external {
         if (msg.sender != core) revert OnlyCORE();
         if (owner != address(0)) revert CantChangeOwner();
         owner = _owner;
     }
 
+    // ========== COLLATERAL OPERATIONS ==========
+
     /**
-     * @notice Transfers tokens from the vault to a recipient
-     * @param token Address of the token to transfer
-     * @param amount Amount to transfer
+     * @notice Withdraws a specific amount of tokens from the vault to the owner
+     * @dev Transfers collateral tokens from this vault to the position owner.
+     *      This function is called when users withdraw collateral from their positions
+     *      or when positions are closed and collateral is returned.
+     * @param token Address of the ERC20 token to transfer
+     * @param amount Amount of tokens to transfer to the owner
+     *
+     * @custom:requirements
+     *   - Caller must be the LendefiCore contract
+     *   - Vault must contain sufficient balance of the specified token
+     *   - Owner address must have been set previously
+     *
+     * @custom:state-changes
+     *   - Reduces the token balance held by this vault
+     *   - Increases the token balance of the owner address
+     *
+     * @custom:access-control Restricted to LendefiCore contract only
+     * @custom:safety Uses SafeERC20 for secure token transfers
+     * @custom:error-cases
+     *   - OnlyCORE: When caller is not the LendefiCore contract
+     *   - May revert if insufficient token balance or transfer failure
      */
     function withdrawToken(address token, uint256 amount) external {
         if (msg.sender != core) revert OnlyCORE();
@@ -38,9 +134,35 @@ contract LendefiPositionVault is Initializable {
     }
 
     /**
-     * @notice Transfer multiple token types to the liquidator
-     * @param tokens Array of token addresses to liquidate
-     * @param liquidator Address receiving the tokens
+     * @notice Transfers all balances of specified tokens to a liquidator during liquidation
+     * @dev Handles the liquidation process by transferring all specified collateral tokens
+     *      to the liquidator. This function is called when a position becomes undercollateralized
+     *      and needs to be liquidated to repay the debt.
+     *
+     *      The function iterates through all provided token addresses and transfers
+     *      the entire balance of each token to the liquidator, ensuring complete
+     *      liquidation of the position's collateral.
+     * @param tokens Array of token addresses to liquidate from this vault
+     * @param liquidator Address that will receive all the liquidated collateral tokens
+     *
+     * @custom:requirements
+     *   - Caller must be the LendefiCore contract
+     *   - tokens array can contain any number of token addresses
+     *   - liquidator must be a valid address capable of receiving tokens
+     *
+     * @custom:state-changes
+     *   - Transfers entire balance of each specified token to liquidator
+     *   - Reduces all token balances in this vault to zero
+     *
+     * @custom:gas-optimization Skips tokens with zero balance to save gas
+     * @custom:access-control Restricted to LendefiCore contract only
+     * @custom:safety Uses SafeERC20 for secure token transfers
+     * @custom:liquidation This is the primary liquidation mechanism for positions
+     * @custom:error-cases
+     *   - OnlyCORE: When caller is not the LendefiCore contract
+     *   - May revert if any token transfer fails
+     *
+     * @custom:batch-operation Processes multiple tokens in a single transaction for efficiency
      */
     function liquidate(address[] calldata tokens, address liquidator) external {
         if (msg.sender != core) revert OnlyCORE();
