@@ -189,6 +189,70 @@ contract LendefiPoRFeed is AggregatorV3Interface, Initializable {
         emit ReservesUpdated(latestRoundId, int256(reserveAmount));
     }
 
+    // ========== MANAGEMENT FUNCTIONS ==========
+
+    /**
+     * @notice Updates the authorized updater address
+     * @dev Allows the owner to change which address can update reserve data.
+     *      This is useful for changing from manual updates to automated systems
+     *      or updating the automation contract address.
+     * @param newUpdater Address of the new authorized updater
+     *
+     * @custom:requirements
+     *   - Caller must be the contract owner
+     *   - newUpdater must not be the zero address
+     *
+     * @custom:state-changes
+     *   - Updates the updater state variable to newUpdater
+     *
+     * @custom:emits UpdaterChanged event with old and new updater addresses
+     * @custom:access-control Restricted to the owner address
+     * @custom:error-cases
+     *   - Unauthorized: When caller is not the owner
+     *   - ZeroAddress: When newUpdater is the zero address
+     */
+    function setUpdater(address newUpdater) external {
+        if (msg.sender != owner) revert Unauthorized();
+        if (newUpdater == address(0)) revert ZeroAddress();
+
+        address oldUpdater = updater;
+        updater = newUpdater;
+
+        emit UpdaterChanged(oldUpdater, newUpdater);
+    }
+
+    /**
+     * @notice Transfers ownership of the contract to a new address
+     * @dev Permanently transfers all owner privileges to the specified address.
+     *      The new owner will have full control over updater management and
+     *      can transfer ownership again if needed.
+     * @param newOwner Address of the new contract owner
+     *
+     * @custom:requirements
+     *   - Caller must be the current contract owner
+     *   - newOwner must not be the zero address
+     *
+     * @custom:state-changes
+     *   - Updates the owner state variable to newOwner
+     *
+     * @custom:emits OwnershipTransferred event with old and new owner addresses
+     * @custom:access-control Restricted to the current owner address
+     * @custom:error-cases
+     *   - Unauthorized: When caller is not the current owner
+     *   - ZeroAddress: When newOwner is the zero address
+     *
+     * @custom:security-warning This action is irreversible, ensure newOwner is correct
+     */
+    function transferOwnership(address newOwner) external {
+        if (msg.sender != owner) revert Unauthorized();
+        if (newOwner == address(0)) revert ZeroAddress();
+
+        address oldOwner = owner;
+        owner = newOwner;
+
+        emit OwnershipTransferred(oldOwner, newOwner);
+    }
+
     // ========== AGGREGATOR INTERFACE IMPLEMENTATION ==========
 
     /**
@@ -305,70 +369,6 @@ contract LendefiPoRFeed is AggregatorV3Interface, Initializable {
      */
     function version() external pure override returns (uint256) {
         return 3; // AggregatorV3Interface
-    }
-
-    // ========== MANAGEMENT FUNCTIONS ==========
-
-    /**
-     * @notice Updates the authorized updater address
-     * @dev Allows the owner to change which address can update reserve data.
-     *      This is useful for changing from manual updates to automated systems
-     *      or updating the automation contract address.
-     * @param newUpdater Address of the new authorized updater
-     *
-     * @custom:requirements
-     *   - Caller must be the contract owner
-     *   - newUpdater must not be the zero address
-     *
-     * @custom:state-changes
-     *   - Updates the updater state variable to newUpdater
-     *
-     * @custom:emits UpdaterChanged event with old and new updater addresses
-     * @custom:access-control Restricted to the owner address
-     * @custom:error-cases
-     *   - Unauthorized: When caller is not the owner
-     *   - ZeroAddress: When newUpdater is the zero address
-     */
-    function setUpdater(address newUpdater) external {
-        if (msg.sender != owner) revert Unauthorized();
-        if (newUpdater == address(0)) revert ZeroAddress();
-
-        address oldUpdater = updater;
-        updater = newUpdater;
-
-        emit UpdaterChanged(oldUpdater, newUpdater);
-    }
-
-    /**
-     * @notice Transfers ownership of the contract to a new address
-     * @dev Permanently transfers all owner privileges to the specified address.
-     *      The new owner will have full control over updater management and
-     *      can transfer ownership again if needed.
-     * @param newOwner Address of the new contract owner
-     *
-     * @custom:requirements
-     *   - Caller must be the current contract owner
-     *   - newOwner must not be the zero address
-     *
-     * @custom:state-changes
-     *   - Updates the owner state variable to newOwner
-     *
-     * @custom:emits OwnershipTransferred event with old and new owner addresses
-     * @custom:access-control Restricted to the current owner address
-     * @custom:error-cases
-     *   - Unauthorized: When caller is not the current owner
-     *   - ZeroAddress: When newOwner is the zero address
-     *
-     * @custom:security-warning This action is irreversible, ensure newOwner is correct
-     */
-    function transferOwnership(address newOwner) external {
-        if (msg.sender != owner) revert Unauthorized();
-        if (newOwner == address(0)) revert ZeroAddress();
-
-        address oldOwner = owner;
-        owner = newOwner;
-
-        emit OwnershipTransferred(oldOwner, newOwner);
     }
 
     // ========== INITIALIZATION ==========
