@@ -11,6 +11,7 @@ pragma solidity 0.8.23;
 
 import {LendefiCore} from "./LendefiCore.sol";
 import {LendefiMarketVault} from "./LendefiMarketVault.sol";
+import {IPROTOCOL} from "../interfaces/IProtocol.sol";
 import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
@@ -26,6 +27,7 @@ contract LendefiMarketFactory is Initializable, AccessControlUpgradeable, UUPSUp
     // ========== STATE VARIABLES ==========
     address public coreImplementation;
     address public vaultImplementation;
+    address public positionVaultImplementation; // Implementation for user position vaults
     address public treasury;
     address public assetsModule;
     address public govToken;
@@ -33,9 +35,9 @@ contract LendefiMarketFactory is Initializable, AccessControlUpgradeable, UUPSUp
     address public porFeed;
     address public ecosystem;
 
-    mapping(address => LendefiCore.Market) public markets; // baseAsset => Market
+    mapping(address => IPROTOCOL.Market) public markets; // baseAsset => Market
     address[] public allBaseAssets;
-    LendefiCore.Market[] public allMarkets;
+    IPROTOCOL.Market[] public allMarkets;
 
     // ========== EVENTS ==========
     event MarketCreated(
@@ -46,19 +48,17 @@ contract LendefiMarketFactory is Initializable, AccessControlUpgradeable, UUPSUp
         string symbol,
         address porFeed
     );
-    event MarketUpdated(address indexed baseAsset, LendefiCore.Market marketInfo);
+    event MarketUpdated(address indexed baseAsset, IPROTOCOL.Market marketInfo);
     event MarketRemoved(address indexed baseAsset);
-    event ImplementationsSet(address indexed coreImplementation, address indexed vaultImplementation);
+    event ImplementationsSet(address indexed coreImplementation, address indexed vaultImplementation, address indexed positionVaultImplementation);
 
     // ========== ERRORS ==========
     error MarketAlreadyExists();
     error ZeroAddress();
-    error InvalidAsset();
     error MarketNotFound();
-    error OnlyAdmin();
     error CloneDeploymentFailed();
+    error InvalidContract();
 
-    // ========== CONSTRUCTOR ==========
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
@@ -94,14 +94,15 @@ contract LendefiMarketFactory is Initializable, AccessControlUpgradeable, UUPSUp
     }
 
     // // ========== ADMIN FUNCTIONS ==========
-    function setImplementations(address _coreImplementation, address _vaultImplementation)
+    function setImplementations(address _coreImplementation, address _vaultImplementation, address _positionVaultImplementation)
         external
         onlyRole(DEFAULT_ADMIN_ROLE)
     {
-        if (_coreImplementation == address(0) || _vaultImplementation == address(0)) revert ZeroAddress();
+        if (_coreImplementation == address(0) || _vaultImplementation == address(0) || _positionVaultImplementation == address(0)) revert ZeroAddress();
         coreImplementation = _coreImplementation;
         vaultImplementation = _vaultImplementation;
-        emit ImplementationsSet(_coreImplementation, _vaultImplementation);
+        positionVaultImplementation = _positionVaultImplementation;
+        emit ImplementationsSet(_coreImplementation, _vaultImplementation, _positionVaultImplementation);
     }
 
     // ========== MARKET MANAGEMENT ==========
@@ -128,7 +129,8 @@ contract LendefiMarketFactory is Initializable, AccessControlUpgradeable, UUPSUp
             timelock, // admin
             govToken, // Use stored govToken
             assetsModule, // assetsModule
-            treasury // treasury
+            treasury, // treasury
+            positionVaultImplementation // position vault implementation for user vaults
         );
         ERC1967Proxy proxy = new ERC1967Proxy(address(core), initData);
         LendefiCore coreInstance = LendefiCore(payable(address(proxy)));
@@ -138,8 +140,9 @@ contract LendefiMarketFactory is Initializable, AccessControlUpgradeable, UUPSUp
         if (baseVault == address(0)) revert CloneDeploymentFailed();
         if (baseVault.code.length == 0) revert CloneDeploymentFailed();
 
-        bytes memory vaultData =
-            abi.encodeCall(LendefiMarketVault.initialize, (timelock, address(coreInstance), baseAsset, ecosystem, name, symbol));
+        bytes memory vaultData = abi.encodeCall(
+            LendefiMarketVault.initialize, (timelock, address(coreInstance), baseAsset, ecosystem, name, symbol)
+        );
         ERC1967Proxy vaultProxy = new ERC1967Proxy(address(baseVault), vaultData);
         LendefiMarketVault vaultInstance = LendefiMarketVault(payable(address(vaultProxy)));
 
@@ -153,7 +156,7 @@ contract LendefiMarketFactory is Initializable, AccessControlUpgradeable, UUPSUp
 
         // Update market info with created addresses
 
-        LendefiCore.Market memory marketInfo = LendefiCore.Market({
+        IPROTOCOL.Market memory marketInfo = IPROTOCOL.Market({
             core: address(coreInstance),
             baseVault: address(vaultInstance),
             baseAsset: baseAsset,
@@ -188,7 +191,7 @@ contract LendefiMarketFactory is Initializable, AccessControlUpgradeable, UUPSUp
      * @param baseAsset Address of the base asset
      * @return Market configuration
      */
-    function getMarketInfo(address baseAsset) external view returns (LendefiCore.Market memory) {
+    function getMarketInfo(address baseAsset) external view returns (IPROTOCOL.Market memory) {
         if (baseAsset == address(0)) revert ZeroAddress();
         if (markets[baseAsset].core == address(0)) revert MarketNotFound();
 
