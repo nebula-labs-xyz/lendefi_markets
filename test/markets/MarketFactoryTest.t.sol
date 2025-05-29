@@ -27,7 +27,7 @@ contract MarketFactoryTest is BasicDeploy {
         marketFactoryInstance.createMarket(address(baseAsset1), "Test Market 1", "TM1");
 
         // Verify market creation
-        LendefiCore.Market memory createdMarket = marketFactoryInstance.getMarketInfo(address(baseAsset1));
+        IPROTOCOL.Market memory createdMarket = marketFactoryInstance.getMarketInfo(address(baseAsset1));
         assertEq(createdMarket.baseAsset, address(baseAsset1));
         assertEq(createdMarket.name, "Test Market 1");
         assertEq(createdMarket.symbol, "TM1");
