@@ -30,7 +30,7 @@ import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IER
 import {EnumerableMap} from "@openzeppelin/contracts/utils/structs/EnumerableMap.sol";
 import {LendefiRates} from "./lib/LendefiRates.sol";
 import {LendefiConstants} from "./lib/LendefiConstants.sol";
-import {IVAULT} from "../interfaces/IVAULT.sol";
+import {ILendefiPositionVault} from "../interfaces/ILendefiPositionVault.sol";
 import {IASSETS} from "../interfaces/IASSETS.sol";
 import {IPROTOCOL} from "../interfaces/IProtocol.sol";
 import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
@@ -406,8 +406,8 @@ contract LendefiCore is
         // Verify clone was successful
         if (vault == address(0)) revert CloneDeploymentFailed();
         if (vault.code.length == 0) revert CloneDeploymentFailed();
-        IVAULT(vault).initialize(address(this));
-        IVAULT(vault).setOwner(msg.sender);
+        ILendefiPositionVault(vault).initialize(address(this));
+        ILendefiPositionVault(vault).setOwner(msg.sender);
 
         newPosition.vault = vault;
         newPosition.isIsolated = isIsolated;
@@ -481,7 +481,7 @@ contract LendefiCore is
                 assetTVLinUSD.set(asset, usdValue);
                 emit TVLUpdated(asset, newTVL);
                 emit WithdrawCollateral(msg.sender, positionId, asset, amount);
-                IVAULT(vault).withdrawToken(asset, amount);
+                ILendefiPositionVault(vault).withdrawToken(asset, amount);
             }
         }
 
@@ -598,7 +598,7 @@ contract LendefiCore is
         _processWithdrawal(asset, amount, positionId);
         // Transfer from vault to user
         address vault = positions[msg.sender][positionId].vault;
-        IVAULT(vault).withdrawToken(asset, amount);
+        ILendefiPositionVault(vault).withdrawToken(asset, amount);
         emit WithdrawCollateral(msg.sender, positionId, asset, amount);
     }
 
@@ -796,7 +796,7 @@ contract LendefiCore is
         // Get the position's vault
         address vault = positions[user][positionId].vault;
         // Transfer all assets from vault to liquidator
-        IVAULT(vault).liquidate(getPositionCollateralAssets(user, positionId), msg.sender);
+        ILendefiPositionVault(vault).liquidate(getPositionCollateralAssets(user, positionId), msg.sender);
         // Clear all collateral assets
         positionCollateral[user][positionId].clear();
 
