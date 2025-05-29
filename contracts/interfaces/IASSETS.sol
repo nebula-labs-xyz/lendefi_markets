@@ -219,6 +219,11 @@ interface IASSETS {
     error ZeroAddressNotAllowed();
 
     /**
+     * @notice Error thrown when a clone deployment fails
+     */
+    error CloneDeploymentFailed();
+
+    /**
      * @notice Error thrown when attempting to use an asset that isn't listed
      * @param asset Address of the unlisted asset
      */
