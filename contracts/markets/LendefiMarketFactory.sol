@@ -31,6 +31,7 @@ contract LendefiMarketFactory is Initializable, AccessControlUpgradeable, UUPSUp
     address public govToken;
     address public timelock;
     address public porFeed;
+    address public ecosystem;
 
     mapping(address => LendefiCore.Market) public markets; // baseAsset => Market
     address[] public allBaseAssets;
@@ -69,11 +70,12 @@ contract LendefiMarketFactory is Initializable, AccessControlUpgradeable, UUPSUp
         address _treasury,
         address _assetsModule,
         address _govToken,
-        address _porFeed
+        address _porFeed,
+        address _ecosystem
     ) external initializer {
         if (
             _timelock == address(0) || _treasury == address(0) || _assetsModule == address(0) || _govToken == address(0)
-                || _porFeed == address(0)
+                || _porFeed == address(0) || _ecosystem == address(0)
         ) {
             revert ZeroAddress();
         }
@@ -88,6 +90,7 @@ contract LendefiMarketFactory is Initializable, AccessControlUpgradeable, UUPSUp
         govToken = _govToken;
         timelock = _timelock;
         porFeed = _porFeed;
+        ecosystem = _ecosystem;
     }
 
     // // ========== ADMIN FUNCTIONS ==========
@@ -136,7 +139,7 @@ contract LendefiMarketFactory is Initializable, AccessControlUpgradeable, UUPSUp
         if (baseVault.code.length == 0) revert CloneDeploymentFailed();
 
         bytes memory vaultData =
-            abi.encodeCall(LendefiMarketVault.initialize, (timelock, address(coreInstance), baseAsset, name, symbol));
+            abi.encodeCall(LendefiMarketVault.initialize, (timelock, address(coreInstance), baseAsset, ecosystem, name, symbol));
         ERC1967Proxy vaultProxy = new ERC1967Proxy(address(baseVault), vaultData);
         LendefiMarketVault vaultInstance = LendefiMarketVault(payable(address(vaultProxy)));
 
