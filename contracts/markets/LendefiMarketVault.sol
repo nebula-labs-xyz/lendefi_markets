@@ -29,6 +29,7 @@ import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/ut
 import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import {EnumerableMap} from "@openzeppelin/contracts/utils/structs/EnumerableMap.sol";
 import {LendefiConstants} from "./lib/LendefiConstants.sol";
+import {LendefiRates} from "./lib/LendefiRates.sol";
 import {IFlashLoanReceiver} from "../interfaces/IFlashLoanReceiver.sol";
 import {IPROTOCOL} from "../interfaces/IProtocol.sol";
 import {IECOSYSTEM} from "../interfaces/IEcosystem.sol";
@@ -54,7 +55,7 @@ contract LendefiMarketVault is
     uint256 public totalBase;
     uint256 public totalBorrow;
     uint32 public version;
-    uint32 public flashLoanFee = 9; // Default: 9 basis points (0.09%)
+    IPROTOCOL.ProtocolConfig public protocolConfig; // Cached protocol config to avoid callbacks
     address public lendefiCore;
     address public ecosystem;
     mapping(address => uint256) public borrowerDebt;
@@ -118,6 +119,8 @@ contract LendefiMarketVault is
         lendefiCore = core;
         ecosystem = _ecosystem;
         version = 1;
+        // Initialize protocol config from core
+        protocolConfig = IPROTOCOL(core).getConfig();
 
         __ERC4626_init(IERC20(baseAsset));
         __ERC20_init(name, symbol);
@@ -134,6 +137,30 @@ contract LendefiMarketVault is
         emit Initialized(msg.sender);
     }
 
+    // ========== CONFIGURATION FUNCTIONS ==========
+
+    /**
+     * @notice Updates the protocol configuration (only callable by core)
+     * @param _config The new protocol configuration
+     */
+    function setProtocolConfig(IPROTOCOL.ProtocolConfig calldata _config)
+        external
+        onlyRole(LendefiConstants.PROTOCOL_ROLE)
+    {
+        // Validate flash loan fee
+        if (_config.flashLoanFee > 100 || _config.flashLoanFee < 1) revert InvalidFee(); // Maximum 1% (100 basis points)
+
+        uint32 oldFee = protocolConfig.flashLoanFee;
+        protocolConfig = _config;
+
+        // Emit event if flash loan fee changed
+        if (oldFee != _config.flashLoanFee) {
+            emit FlashLoanFeeUpdated(oldFee, _config.flashLoanFee);
+        }
+    }
+
+    // ========== FLASH LOAN FUNCTIONS ==========
+
     /**
      * @notice Flash loan function
      * @param receiver The address of the receiver
@@ -147,20 +174,22 @@ contract LendefiMarketVault is
         nonReentrant
         whenNotPaused
     {
-        IERC20 baseAssetInstance = IERC20(asset());
+        // Cache asset address to avoid multiple external calls
+        address cachedAsset = asset();
+        IERC20 baseAssetInstance = IERC20(cachedAsset);
         uint256 initialBalance = baseAssetInstance.balanceOf(address(this));
         if (amount > initialBalance) revert LowLiquidity();
 
         // Calculate fee and record initial balance
-        uint256 fee = (amount * flashLoanFee) / 10000;
+        uint256 fee = (amount * protocolConfig.flashLoanFee) / 10000;
         uint256 requiredBalance = initialBalance + fee;
         totalBase += fee;
 
         // Transfer flash loan amount
         baseAssetInstance.safeTransfer(receiver, amount);
 
-        // Execute flash loan operation
-        bool success = IFlashLoanReceiver(receiver).executeOperation(address(asset()), amount, fee, msg.sender, params);
+        // Execute flash loan operation using cached asset address
+        bool success = IFlashLoanReceiver(receiver).executeOperation(cachedAsset, amount, fee, msg.sender, params);
 
         // Verify both the return value AND the actual balance
         if (!success) revert FlashLoanFailed(); // Flash loan failed (incorrect return value)
@@ -168,8 +197,8 @@ contract LendefiMarketVault is
         uint256 currentBalance = baseAssetInstance.balanceOf(address(this));
         if (currentBalance < requiredBalance) revert RepaymentFailed(); // Repay failed (insufficient funds returned)
 
-        // Update protocol state only after all verifications succeed
-        emit FlashLoan(msg.sender, receiver, address(asset()), amount, fee);
+        // Update protocol state only after all verifications succeed using cached asset address
+        emit FlashLoan(msg.sender, receiver, cachedAsset, amount, fee);
     }
 
     // ========== ADMIN FUNCTIONS ==========
@@ -187,18 +216,6 @@ contract LendefiMarketVault is
      */
     function unpause() external onlyRole(LendefiConstants.PAUSER_ROLE) {
         _unpause();
-    }
-
-    /**
-     * @notice Update the flash loan fee
-     * @dev Only callable by manager role
-     * @param newFee The new flash loan fee in basis points (max 100 = 1%)
-     */
-    function setFlashLoanFee(uint32 newFee) external onlyRole(LendefiConstants.MANAGER_ROLE) {
-        if (newFee > 100 || newFee < 1) revert InvalidFee(); // Maximum 1% (100 basis points)
-        uint32 oldFee = flashLoanFee;
-        flashLoanFee = uint32(newFee);
-        emit FlashLoanFeeUpdated(oldFee, newFee);
     }
 
     /**
@@ -240,20 +257,25 @@ contract LendefiMarketVault is
             // Get config from core
             IPROTOCOL.ProtocolConfig memory config = IPROTOCOL(lendefiCore).getConfig();
 
+            // Cache ecosystem contract to avoid multiple storage reads
+            IECOSYSTEM cachedEcosystem = IECOSYSTEM(ecosystem);
+
             // Calculate reward amount based on blocks elapsed
-            uint256 blocksElapsed = block.number - liquidityOperationBlock[msg.sender];
+            uint256 lastOperationBlock = liquidityOperationBlock[msg.sender];
+            uint256 currentBlock = block.number;
+            uint256 blocksElapsed = currentBlock - lastOperationBlock;
             uint256 reward = (config.rewardAmount * blocksElapsed) / config.rewardInterval;
 
-            // Apply maximum reward cap
-            uint256 maxReward = IECOSYSTEM(ecosystem).maxReward();
+            // Apply maximum reward cap using cached ecosystem reference
+            uint256 maxReward = cachedEcosystem.maxReward();
             finalReward = reward > maxReward ? maxReward : reward;
 
             // Reset block number for next reward period
-            liquidityOperationBlock[msg.sender] = block.number;
+            liquidityOperationBlock[msg.sender] = currentBlock;
 
-            // Emit event and issue reward
+            // Emit event and issue reward using cached ecosystem reference
             emit Reward(msg.sender, finalReward);
-            IECOSYSTEM(ecosystem).reward(msg.sender, finalReward);
+            cachedEcosystem.reward(msg.sender, finalReward);
         }
     }
 
@@ -273,8 +295,10 @@ contract LendefiMarketVault is
         returns (uint256)
     {
         // MEV protection: prevent same-block operations
-        if (liquidityOperationBlock[receiver] >= block.number) revert MEVSameBlockOperation();
-        liquidityOperationBlock[receiver] = block.number;
+        uint256 lastOperationBlock = liquidityOperationBlock[receiver];
+        uint256 currentBlock = block.number;
+        if (lastOperationBlock >= currentBlock) revert MEVSameBlockOperation();
+        liquidityOperationBlock[receiver] = currentBlock;
 
         uint256 shares = super.deposit(amount, receiver);
         totalBase += amount;
@@ -298,8 +322,10 @@ contract LendefiMarketVault is
         returns (uint256)
     {
         // MEV protection: prevent same-block operations
-        if (liquidityOperationBlock[receiver] >= block.number) revert MEVSameBlockOperation();
-        liquidityOperationBlock[receiver] = block.number;
+        uint256 lastOperationBlock = liquidityOperationBlock[receiver];
+        uint256 currentBlock = block.number;
+        if (lastOperationBlock >= currentBlock) revert MEVSameBlockOperation();
+        liquidityOperationBlock[receiver] = currentBlock;
 
         uint256 amount = super.mint(shares, receiver);
         totalBase += amount;
@@ -325,8 +351,10 @@ contract LendefiMarketVault is
         returns (uint256)
     {
         // MEV protection: prevent same-block operations
-        if (liquidityOperationBlock[owner] >= block.number) revert MEVSameBlockOperation();
-        liquidityOperationBlock[owner] = block.number;
+        uint256 lastOperationBlock = liquidityOperationBlock[owner];
+        uint256 currentBlock = block.number;
+        if (lastOperationBlock >= currentBlock) revert MEVSameBlockOperation();
+        liquidityOperationBlock[owner] = currentBlock;
 
         uint256 shares = super.withdraw(amount, receiver, owner);
         totalBase -= amount;
@@ -352,8 +380,10 @@ contract LendefiMarketVault is
         returns (uint256)
     {
         // MEV protection: prevent same-block operations
-        if (liquidityOperationBlock[owner] >= block.number) revert MEVSameBlockOperation();
-        liquidityOperationBlock[owner] = block.number;
+        uint256 lastOperationBlock = liquidityOperationBlock[owner];
+        uint256 currentBlock = block.number;
+        if (lastOperationBlock >= currentBlock) revert MEVSameBlockOperation();
+        liquidityOperationBlock[owner] = currentBlock;
 
         uint256 amount = super.redeem(shares, receiver, owner);
         totalBase -= amount;
@@ -400,6 +430,7 @@ contract LendefiMarketVault is
         totalBase += amount;
         totalAccruedInterest += interestPaid;
 
+        // Cache asset address to avoid external call
         IERC20(asset()).safeTransferFrom(msg.sender, address(this), amount);
     }
 
@@ -417,9 +448,11 @@ contract LendefiMarketVault is
      * @return u The protocol's current utilization rate (0-1e6)
      */
     function utilization() public view returns (uint256 u) {
-        (totalSuppliedLiquidity == 0 || totalBorrow == 0)
-            ? u = 0
-            : u = (baseDecimals * totalBorrow) / totalSuppliedLiquidity;
+        // Cache storage reads to avoid multiple SLOADs
+        uint256 cachedSupply = totalSuppliedLiquidity;
+        uint256 cachedBorrow = totalBorrow;
+
+        (cachedSupply == 0 || cachedBorrow == 0) ? u = 0 : u = (baseDecimals * cachedBorrow) / cachedSupply;
     }
 
     /**
@@ -432,11 +465,22 @@ contract LendefiMarketVault is
         uint256 lastBlock = liquidityOperationBlock[user];
         if (lastBlock == 0) return false; // Never had liquidity operation
 
-        IPROTOCOL.ProtocolConfig memory config = IPROTOCOL(lendefiCore).getConfig();
+        IPROTOCOL.ProtocolConfig memory config = protocolConfig;
         if (config.rewardAmount == 0) return false; // Rewards disabled
+        uint256 baseAmount = previewRedeem(balanceOf(user));
 
-        uint256 baseAmount = balanceOf(user) > 0 ? (balanceOf(user) * totalSuppliedLiquidity) / totalSupply() : 0;
         return block.number - lastBlock >= config.rewardInterval && baseAmount >= config.rewardableSupply;
+    }
+
+    /**
+     * @notice Calculates the current supply interest rate for liquidity providers
+     * @dev Based on utilization, protocol fees, and available liquidity
+     * @return The current annual supply interest rate in baseDecimals format
+     */
+    function getSupplyRate() public view returns (uint256) {
+        return LendefiRates.getSupplyRate(
+            totalSupply(), totalBorrow, totalSuppliedLiquidity, protocolConfig.profitTargetRate, totalAssets()
+        );
     }
 
     /**
