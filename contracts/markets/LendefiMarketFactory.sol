@@ -17,7 +17,6 @@ import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/U
 import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
-import {Upgrades} from "openzeppelin-foundry-upgrades/Upgrades.sol";
 import {IPoRFeed} from "../interfaces/IPoRFeed.sol";
 
 /// @custom:oz-upgrades
@@ -96,7 +95,7 @@ contract LendefiMarketFactory is Initializable, AccessControlUpgradeable, UUPSUp
         external
         onlyRole(DEFAULT_ADMIN_ROLE)
     {
-        if (_coreImplementation == address(0)) revert ZeroAddress();
+        if (_coreImplementation == address(0) || _vaultImplementation == address(0)) revert ZeroAddress();
         coreImplementation = _coreImplementation;
         vaultImplementation = _vaultImplementation;
         emit ImplementationsSet(_coreImplementation, _vaultImplementation);
@@ -120,7 +119,7 @@ contract LendefiMarketFactory is Initializable, AccessControlUpgradeable, UUPSUp
         // Verify clone was successful
         if (core == address(0)) revert CloneDeploymentFailed();
         if (core.code.length == 0) revert CloneDeploymentFailed();
-        
+
         bytes memory initData = abi.encodeWithSelector(
             LendefiCore.initialize.selector,
             timelock, // admin
@@ -135,7 +134,7 @@ contract LendefiMarketFactory is Initializable, AccessControlUpgradeable, UUPSUp
         // Verify clone was successful
         if (baseVault == address(0)) revert CloneDeploymentFailed();
         if (baseVault.code.length == 0) revert CloneDeploymentFailed();
-        
+
         bytes memory vaultData =
             abi.encodeCall(LendefiMarketVault.initialize, (timelock, address(coreInstance), baseAsset, name, symbol));
         ERC1967Proxy vaultProxy = new ERC1967Proxy(address(baseVault), vaultData);
@@ -145,7 +144,7 @@ contract LendefiMarketFactory is Initializable, AccessControlUpgradeable, UUPSUp
         // Verify clone was successful
         if (porFeedClone == address(0)) revert CloneDeploymentFailed();
         if (porFeedClone.code.length == 0) revert CloneDeploymentFailed();
-        
+
         //function initialize(address _asset, address _lendefiProtocol, address _updater, address _owner)
         IPoRFeed(porFeedClone).initialize(baseAsset, address(coreInstance), timelock, timelock);
 
