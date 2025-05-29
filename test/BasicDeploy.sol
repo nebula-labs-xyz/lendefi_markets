@@ -706,7 +706,9 @@ contract BasicDeploy is Test {
 
         // Set implementations - marketVaultImpl for market vaults, positionVaultImpl for user vaults
         vm.prank(address(timelockInstance));
-        marketFactoryInstance.setImplementations(address(coreImpl), address(marketVaultImpl), address(positionVaultImpl));
+        marketFactoryInstance.setImplementations(
+            address(coreImpl), address(marketVaultImpl), address(positionVaultImpl)
+        );
     }
 
     /**
