@@ -3,58 +3,61 @@ pragma solidity 0.8.23;
 
 import {IASSETS} from "../interfaces/IASSETS.sol";
 
-interface IPROTOCOL {
-    // Enums
+interface IProtocol {
+    // ========== ENUMS ==========
 
     /**
      * @notice Current status of a borrowing position
      * @dev Used to track position lifecycle and determine valid operations
      */
     enum PositionStatus {
-        LIQUIDATED, // Position has been liquidated
-        ACTIVE, // Position is active and can be modified
-        CLOSED // Position has been voluntarily closed by the user
-
+        INACTIVE,   // Default state, never used
+        ACTIVE,     // Position is active and can be modified
+        CLOSED,     // Position has been voluntarily closed by the user
+        LIQUIDATED  // Position has been liquidated
     }
+
+    // ========== STRUCTS ==========
 
     /**
      * @notice Configuration parameters for protocol operations and rewards
      * @dev Centralized storage for all adjustable protocol parameters
      */
     struct ProtocolConfig {
-        uint256 profitTargetRate; // Target profit rate (min 0.25%)
-        uint256 borrowRate; // Base borrow rate (min 1%)
-        uint256 rewardAmount; // Target reward amount (max 10,000 tokens)
-        uint256 rewardInterval; // Reward interval in seconds (min 90 days)
-        uint256 rewardableSupply; // Minimum rewardable supply (min 20,000 USDC)
-        uint256 liquidatorThreshold; // Minimum liquidator token threshold (min 10 tokens)
-        uint256 flashLoanFee; // Fee percentage for flash loans in basis points (max 100)
+        uint256 profitTargetRate;      // Target profit rate (min 0.25%)
+        uint256 borrowRate;            // Base borrow rate (min 1%)
+        uint256 rewardAmount;          // Target reward amount (max 10,000 tokens)
+        uint256 rewardInterval;        // Reward interval in seconds (min 90 days)
+        uint256 rewardableSupply;      // Minimum rewardable supply (min 20,000 USDC)
+        uint256 liquidatorThreshold;   // Minimum liquidator token threshold (min 10 tokens)
     }
+
     /**
      * @notice User borrowing position data
      * @dev Core data structure tracking user's debt and position configuration
      */
-
     struct UserPosition {
-        bool isIsolated; // Whether position uses isolation mode
-        uint256 debtAmount; // Current debt principal without interest
-        uint256 lastInterestAccrual; // Timestamp of last interest accrual
-        PositionStatus status; // Current lifecycle status of the position
-        address vault; // Address of the vault contract for this position
+        address vault;                 // Address of the vault contract for this position
+        uint256 debtAmount;           // Current debt principal without interest
+        uint256 lastInterestAccrual;  // Timestamp of last interest accrual
+        PositionStatus status;        // Current lifecycle status of the position
+        bool isIsolated;             // Whether position uses isolation mode
     }
 
     /**
-     * @notice Structure to store pending upgrade details
-     * @param implementation Address of the new implementation contract
-     * @param scheduledTime Timestamp when the upgrade was scheduled
-     * @param exists Boolean flag indicating if an upgrade is currently scheduled
+     * @notice Market configuration and addresses
+     * @dev Contains all market-specific contract addresses
      */
-    struct UpgradeRequest {
-        address implementation;
-        uint64 scheduledTime;
-        bool exists;
+    struct Market {
+        string name;             // Market name (e.g. "USDC Market")
+        address baseAsset;       // Base asset address (e.g. USDC)
+        address baseVault;       // Vault handling base asset
+        address core;            // Core lending logic contract
+        address vaultFactory;    // Factory for creating position vaults
+        address assets;          // Assets registry contract
     }
-    // Events
+
+    // ========== EVENTS ==========
 
     /**
      * @notice Emitted when protocol is initialized
@@ -63,14 +66,14 @@ interface IPROTOCOL {
     event Initialized(address indexed admin);
 
     /**
-     * @notice Emitted when implementation contract is upgraded
-     * @param admin Address of the admin who performed the upgrade
-     * @param implementation Address of the new implementation
+     * @notice Emitted when market is initialized
+     * @param baseAsset Address of the base asset
+     * @param baseVault Address of the base vault
      */
-    event Upgrade(address indexed admin, address indexed implementation);
+    event MarketInitialized(address indexed baseAsset, address indexed baseVault);
 
     /**
-     * @dev Emitted when protocol Config is updated
+     * @notice Emitted when protocol Config is updated
      */
     event ProtocolConfigUpdated(
         uint256 profitTargetRate,
@@ -78,24 +81,38 @@ interface IPROTOCOL {
         uint256 rewardAmount,
         uint256 interval,
         uint256 supplyAmount,
-        uint256 liquidatorAmount,
-        uint256 flashLoanFee
+        uint256 liquidatorAmount
     );
 
     /**
-     * @notice Emitted when a user supplies liquidity to the protocol
-     * @param supplier Address of the liquidity supplier
-     * @param amount Amount of USDC supplied
+     * @notice Emitted when a user deposits liquidity into the protocol
+     * @param user Address of the liquidity provider
+     * @param amount Amount of base asset deposited
      */
-    event SupplyLiquidity(address indexed supplier, uint256 amount);
+    event DepositLiquidity(address indexed user, uint256 amount);
 
     /**
-     * @notice Emitted when LP tokens are exchanged for underlying assets
-     * @param exchanger Address of the user exchanging tokens
-     * @param amount Amount of LP tokens exchanged
-     * @param value Value received in exchange
+     * @notice Emitted when a user withdraws liquidity from the protocol
+     * @param user Address of the liquidity provider
+     * @param amount Amount of base asset withdrawn
      */
-    event Exchange(address indexed exchanger, uint256 amount, uint256 value);
+    event WithdrawLiquidity(address indexed user, uint256 amount);
+
+    /**
+     * @notice Emitted when a user redeems shares for base asset
+     * @param user Address of the share holder
+     * @param shares Amount of shares redeemed
+     * @param amount Amount of base asset received
+     */
+    event RedeemShares(address indexed user, uint256 shares, uint256 amount);
+
+    /**
+     * @notice Emitted when a user mints shares by depositing base asset
+     * @param user Address of the depositor
+     * @param amount Amount of base asset deposited
+     * @param shares Amount of shares minted
+     */
+    event MintShares(address indexed user, uint256 amount, uint256 shares);
 
     /**
      * @notice Emitted when collateral is supplied to a position
@@ -162,24 +179,12 @@ interface IPROTOCOL {
     event Reward(address indexed user, uint256 amount);
 
     /**
-     * @notice Emitted when a flash loan is executed
-     * @param initiator Address that initiated the flash loan
-     * @param receiver Contract receiving the flash loan
-     * @param token Address of the borrowed token
-     * @param amount Amount borrowed
-     * @param fee Fee charged for the flash loan
-     */
-    event FlashLoan(
-        address indexed initiator, address indexed receiver, address indexed token, uint256 amount, uint256 fee
-    );
-
-    /**
      * @notice Emitted when a position is liquidated
      * @param user The address of the position owner
      * @param positionId The ID of the inactive position
      * @param liquidator The address of the liquidator
      */
-    event Liquidated(address indexed user, uint256 indexed positionId, address liquidator);
+    event Liquidated(address indexed user, uint256 indexed positionId, address indexed liquidator);
 
     /**
      * @notice Emitted when an asset's total value locked (TVL) is updated
@@ -187,20 +192,6 @@ interface IPROTOCOL {
      * @param amount The new TVL amount
      */
     event TVLUpdated(address indexed asset, uint256 amount);
-
-    /// @notice Emitted when an upgrade is scheduled
-    /// @param scheduler The address scheduling the upgrade
-    /// @param implementation The new implementation contract address
-    /// @param scheduledTime The timestamp when the upgrade was scheduled
-    /// @param effectiveTime The timestamp when the upgrade can be executed
-    event UpgradeScheduled(
-        address indexed scheduler, address indexed implementation, uint64 scheduledTime, uint64 effectiveTime
-    );
-
-    /// @notice Emitted when a scheduled upgrade is cancelled
-    /// @param canceller The address that cancelled the upgrade
-    /// @param implementation The implementation address that was cancelled
-    event UpgradeCancelled(address indexed canceller, address indexed implementation);
 
     /**
      * @notice Event emitted when a new vault is created
@@ -210,36 +201,13 @@ interface IPROTOCOL {
      */
     event VaultCreated(address indexed user, uint256 indexed positionId, address vault);
 
-    /**
-     * @notice Emitted when DAO withdraws excess USDC from the protocol
-     * @param amount The amount of USDC withdrawn
-     */
-    event ExcessUsdcTransferredToTreasury(uint256 amount);
-
-    /**
-     * @notice Emitted when the DAO deposits USDC into the protocol
-     * @param amount The amount of USDC deposited
-     */
-    event YieldBoosted(uint256 amount);
-
-    //////////////////////////////////////////////////
-    // -------------------Errors-------------------//
-    /////////////////////////////////////////////////
+    // ========== ERRORS ==========
 
     /// @notice Thrown when attempting to set a critical address to the zero address
     error ZeroAddressNotAllowed();
 
-    /// @notice Thrown when attempting to execute an upgrade before timelock expires
-    /// @param timeRemaining The time remaining until the upgrade can be executed
-    error UpgradeTimelockActive(uint256 timeRemaining);
-
-    /// @notice Thrown when attempting to execute an upgrade that wasn't scheduled
-    error UpgradeNotScheduled();
-
-    /// @notice Thrown when implementation address doesn't match scheduled upgrade
-    /// @param scheduledImpl The address that was scheduled for upgrade
-    /// @param attemptedImpl The address that was attempted to be used
-    error ImplementationMismatch(address scheduledImpl, address attemptedImpl);
+    /// @notice Thrown when clone deployment fails
+    error CloneDeploymentFailed();
 
     /**
      * @notice Thrown when attempting to create more positions than the protocol limit
@@ -272,28 +240,10 @@ interface IPROTOCOL {
     error ZeroAmount();
 
     /**
-     * @notice Thrown when attempting to set an invalid flash loan fee
-     * @dev Fee must be within the allowed range (0-100 basis points)
-     */
-    error InvalidFee();
-
-    /**
      * @notice Thrown when the protocol does not have enough liquidity for an operation
-     * @dev Used in borrow and flash loan operations
+     * @dev Used in borrow operations
      */
     error LowLiquidity();
-
-    /**
-     * @notice Thrown when a flash loan operation fails to execute properly
-     * @dev The receiver contract must return true from executeOperation
-     */
-    error FlashLoanFailed();
-
-    /**
-     * @notice Thrown when a flash loan isn't repaid in the same transaction
-     * @dev The full amount plus fee must be returned to the protocol
-     */
-    error RepaymentFailed();
 
     /**
      * @notice Thrown when attempting to supply an asset beyond its protocol-wide capacity
@@ -321,7 +271,7 @@ interface IPROTOCOL {
 
     /**
      * @notice Thrown when attempting to withdraw more than the available balance
-     * @dev Used in withdrawCollateral and interpositionalTransfer operations
+     * @dev Used in withdrawCollateral operations
      */
     error LowBalance();
 
@@ -391,45 +341,43 @@ interface IPROTOCOL {
      */
     error PoolLiquidityLimitReached();
 
-    /// @notice Thrown when a two transaction attempts in same block
-    error MEVSameBlockOperation();
     /// @notice Thrown when a transaction exceeds the maximum slippage allowed for MEV protection
     error MEVSlippageExceeded();
 
-    //////////////////////////////////////////////////
-    // ---------------Core functions---------------//
-    /////////////////////////////////////////////////
+    // ========== CORE FUNCTIONS ==========
 
     /**
      * @notice Initializes the protocol with core dependencies and parameters
-     * @param usdc The address of the USDC stablecoin used for borrowing and liquidity
-     * @param govToken The address of the governance token used for liquidator eligibility
-     * @param ecosystem The address of the ecosystem contract that manages rewards
-     * @param treasury_ The address of the treasury that collects protocol fees
-     * @param timelock_ The address of the timelock contract for governance actions
-     * @param yieldToken The address of the yield token contract
-     * @param vaultFactory The address of the vault factory contract
-     * @param multisig The address of the initial admin with pausing capability
-     * @dev Sets up access control roles and default protocol parameters
+     * @param _baseAsset The address of the base asset (e.g., USDC)
+     * @param _govToken The address of the governance token
+     * @param _treasury The address of the treasury contract
+     * @param _timelock The address of the timelock contract
+     * @param _marketFactory The address of the market factory
+     * @param _cVault The address of the cloneable vault implementation
+     * @param _pauser The address with pausing capability
      */
-    // function initialize(
-    //     address usdc,
-    //     address govToken,
-    //     address ecosystem,
-    //     address treasury_,
-    //     address timelock_,
-    //     address yieldToken,
-    //     address assetsModule,
-    //     address vaultFactory,
-    //     address multisig
-    // ) external;
+    function initialize(
+        address _baseAsset,
+        address _govToken,
+        address _treasury,
+        address _timelock,
+        address _marketFactory,
+        address _cVault,
+        address _pauser
+    ) external;
 
     /**
-     * @notice Returns the total value locked for a specific asset
-     * @param asset The address of the asset to query
-     * @return Total amount of the asset held in the protocol
+     * @notice Initializes the market with vault and assets module
+     * @param _baseVault The address of the base vault
+     * @param _assets The address of the assets module
      */
-    function assetTVL(address asset) external view returns (uint256);
+    function initializeMarket(address _baseVault, address _assets) external;
+
+    /**
+     * @notice Loads a new protocol configuration
+     * @param config The new protocol configuration to apply
+     */
+    function loadProtocolConfig(ProtocolConfig memory config) external;
 
     /**
      * @notice Pauses all protocol operations in case of emergency
@@ -443,32 +391,48 @@ interface IPROTOCOL {
      */
     function unpause() external;
 
-    // Flash loan function
-    /**
-     * @notice Executes a flash loan, allowing borrowing without collateral if repaid in same transaction
-     * @param receiver The contract address that will receive the flash loaned tokens
-     * @param amount The amount of tokens to flash loan
-     * @param params Arbitrary data to pass to the receiver contract
-     * @dev Receiver must implement IFlashLoanReceiver interface
-     */
-    function flashLoan(address receiver, uint256 amount, bytes calldata params) external;
-
-    // Position management functions
+    // Liquidity Management Functions
 
     /**
-     * @notice Allows users to supply liquidity (USDC) to the protocol
-     * @param amount The amount of USDC to supply
-     * @dev Mints LP tokens representing the user's share of the liquidity pool
-     */
-    // function supplyLiquidity(uint256 amount) external;
-
-    /**
-     * @notice Allows users to withdraw liquidity by burning LP tokens
-     * @param amount The amount of LP tokens to burn
-     * @param expectedUsdc The expected amount of USDC to receive
+     * @notice Deposits liquidity into the protocol and receives shares
+     * @param amount The amount of base asset to deposit
+     * @param minShares Minimum shares to receive (MEV protection)
      * @param maxSlippageBps Maximum allowed slippage in basis points
      */
-    // function exchange(uint256 amount, uint256 expectedUsdc, uint32 maxSlippageBps) external;
+    function depositLiquidity(uint256 amount, uint256 minShares, uint32 maxSlippageBps) external;
+
+    /**
+     * @notice Mints specific amount of shares by depositing base asset
+     * @param shares The amount of shares to mint
+     * @param maxAssets Maximum assets to deposit (MEV protection)
+     * @param maxSlippageBps Maximum allowed slippage in basis points
+     */
+    function mintShares(uint256 shares, uint256 maxAssets, uint32 maxSlippageBps) external;
+
+    /**
+     * @notice Redeems shares for base asset
+     * @param shares The amount of shares to redeem
+     * @param minAssets Minimum assets to receive (MEV protection)
+     * @param maxSlippageBps Maximum allowed slippage in basis points
+     */
+    function redeemLiquidityShares(uint256 shares, uint256 minAssets, uint32 maxSlippageBps) external;
+
+    /**
+     * @notice Withdraws specific amount of base asset by burning shares
+     * @param assets The amount of base asset to withdraw
+     * @param maxShares Maximum shares to burn (MEV protection)
+     * @param maxSlippageBps Maximum allowed slippage in basis points
+     */
+    function withdrawLiquidity(uint256 assets, uint256 maxShares, uint32 maxSlippageBps) external;
+
+    // Position Management Functions
+
+    /**
+     * @notice Creates a new borrowing position for the caller
+     * @param asset The address of the initial collateral asset
+     * @param isIsolated Whether to create the position in isolation mode
+     */
+    function createPosition(address asset, bool isIsolated) external;
 
     /**
      * @notice Allows users to supply collateral assets to a borrowing position
@@ -488,21 +452,11 @@ interface IPROTOCOL {
     function withdrawCollateral(address asset, uint256 amount, uint256 positionId) external;
 
     /**
-     * @notice Creates a new borrowing position for the caller
-     * @param asset The address of the initial collateral asset
-     * @param isIsolated Whether to create the position in isolation mode
-     */
-    function createPosition(address asset, bool isIsolated) external;
-
-    /**
      * @notice Allows borrowing stablecoins against collateral in a position
      * @param positionId The ID of the position to borrow against
      * @param amount The amount of stablecoins to borrow
      * @param expectedCreditLimit Expected credit limit value for MEV protection
-     * @param maxSlippageBps Maximum allowed slippage in basis points (e.g., 100 = 1%)
-     * @dev Will revert if borrowing would exceed the position's credit limit
-     * @dev Includes MEV protection against oracle price manipulation affecting credit calculations
-     * @dev Reverts with MEVSlippageExceeded if actual credit limit deviates from expected by more than maxSlippageBps
+     * @param maxSlippageBps Maximum allowed slippage in basis points
      */
     function borrow(uint256 positionId, uint256 amount, uint256 expectedCreditLimit, uint32 maxSlippageBps) external;
 
@@ -534,213 +488,48 @@ interface IPROTOCOL {
      */
     function liquidate(address user, uint256 positionId, uint256 expectedCost, uint32 maxSlippageBps) external;
 
-    // View functions - Position information
+    // ========== VIEW FUNCTIONS ==========
 
-    /**
-     * @notice Gets the total number of positions created by a user
-     * @param user The address of the user
-     * @return The number of positions the user has created
-     */
-    function getUserPositionsCount(address user) external view returns (uint256);
-
-    /**
-     * @notice Gets all positions created by a user
-     * @param user The address of the user
-     * @return An array of UserPosition structs
-     */
-    function getUserPositions(address user) external view returns (UserPosition[] memory);
-
-    /**
-     * @notice Gets a specific position's data
-     * @param user The address of the position owner
-     * @param positionId The ID of the position
-     * @return UserPosition struct containing position data
-     */
-    function getUserPosition(address user, uint256 positionId) external view returns (UserPosition memory);
-
-    /**
-     * @notice Gets the amount of a specific asset in a position
-     * @param user The address of the position owner
-     * @param positionId The ID of the position
-     * @param asset The address of the collateral asset
-     * @return The amount of the asset in the position
-     */
-    function getCollateralAmount(address user, uint256 positionId, address asset) external view returns (uint256);
-
-    /**
-     * @notice Calculates the current debt amount including accrued interest
-     * @param user The address of the position owner
-     * @param positionId The ID of the position
-     * @return The total debt amount with interest
-     */
-    function calculateDebtWithInterest(address user, uint256 positionId) external view returns (uint256);
-
-    /**
-     * @notice Calculates the liquidation fee for a position
-     * @param user The address of the position owner
-     * @param positionId The ID of the position
-     * @return The liquidation fee amount
-     */
-    function getPositionLiquidationFee(address user, uint256 positionId) external view returns (uint256);
-
-    /**
-     * @notice Calculates the maximum amount a user can borrow against their position
-     * @param user The address of the position owner
-     * @param positionId The ID of the position
-     * @return The maximum borrowing capacity (credit limit)
-     */
-    function calculateCreditLimit(address user, uint256 positionId) external view returns (uint256);
-
-    /**
-     * @notice Calculates the total USD value of all collateral in a position
-     * @param user The address of the position owner
-     * @param positionId The ID of the position
-     * @return The total value of all collateral assets in the position in USD terms
-     * @dev Aggregates values across all collateral assets using oracle price feeds
-     */
-    function calculateCollateralValue(address user, uint256 positionId) external view returns (uint256);
-
-    /**
-     * @notice Gets the timestamp of the last liquidity reward accrual for a user
-     * @param user The address of the user
-     * @return The timestamp when rewards were last accrued
-     */
-    function getLiquidityAccrueTimeIndex(address user) external view returns (uint256);
-
-    /**
-     * @notice Checks if a position is eligible for liquidation
-     * @param user The address of the position owner
-     * @param positionId The ID of the position
-     * @return True if the position can be liquidated, false otherwise
-     */
-    function isLiquidatable(address user, uint256 positionId) external view returns (bool);
-
-    /**
-     * @notice Calculates the health factor of a borrowing position
-     * @param user The address of the position owner
-     * @param positionId The ID of the position
-     * @return The position's health factor (scaled by WAD)
-     * @dev Health factor > 1 means position is healthy, < 1 means liquidatable
-     */
-    function healthFactor(address user, uint256 positionId) external view returns (uint256);
-
-    /**
-     * @notice Gets all collateral assets in a position
-     * @param user The address of the position owner
-     * @param positionId The ID of the position
-     * @return An array of asset addresses in the position
-     */
-    function getPositionCollateralAssets(address user, uint256 positionId) external view returns (address[] memory);
-
-    /**
-     * @notice Calculates the current utilization rate of the protocol
-     * @return u The utilization rate (scaled by WAD)
-     * @dev Utilization = totalBorrow / totalSuppliedLiquidity
-     */
-    function getUtilization() external view returns (uint256 u);
-
-    /**
-     * @notice Gets the current supply interest rate
-     * @return The supply interest rate (scaled by RAY)
-     */
-    function getSupplyRate() external view returns (uint256);
-
-    /**
-     * @notice Gets the current borrow interest rate for a specific tier
-     * @param tier The collateral tier to query
-     * @return The borrow interest rate (scaled by RAY)
-     */
-    function getBorrowRate(IASSETS.CollateralTier tier) external view returns (uint256);
-
-    /**
-     * @notice Checks if a user is eligible for rewards
-     * @param user The address of the user
-     * @return True if user is eligible for rewards, false otherwise
-     */
-    function isRewardable(address user) external view returns (bool);
-
-    /**
-     * @notice Gets the current protocol version
-     * @return The protocol version number
-     */
-    function version() external view returns (uint8);
-
-    // State view functions
-    /**
-     * @notice Gets the total amount borrowed from the protocol
-     * @return The total borrowed amount
-     */
-    function totalBorrow() external view returns (uint256);
-
-    /**
-     * @notice Gets the total liquidity supplied to the protocol
-     * @return The total supplied liquidity
-     */
-    function totalSuppliedLiquidity() external view returns (uint256);
-
-    /**
-     * @notice Gets the total interest accrued by borrowers
-     * @return The total accrued borrower interest
-     */
-    function totalAccruedBorrowerInterest() external view returns (uint256);
-
-    /**
-     * @notice Gets the total interest accrued by suppliers
-     * @return The total accrued supplier interest
-     */
-    function totalAccruedSupplierInterest() external view returns (uint256);
-
-    /**
-     * @notice Gets the total fees collected from flash loans
-     * @return The total flash loan fees collected
-     */
-    function totalFlashLoanFees() external view returns (uint256);
-
-    /**
-     * @notice Gets the address of the treasury contract
-     * @return The treasury contract address
-     */
+    // State Variables
+    function govToken() external view returns (address);
     function treasury() external view returns (address);
+    function baseAsset() external view returns (address);
+    function marketFactory() external view returns (address);
+    function cVault() external view returns (address);
+    function totalBorrow() external view returns (uint256);
+    function totalAccruedBorrowerInterest() external view returns (uint256);
+    function WAD() external view returns (uint256);
+    function version() external view returns (uint256);
 
-    /**
-     * @notice Determines the collateral tier of a position for risk assessment
-     * @param user The address of the position owner
-     * @param positionId The ID of the position
-     * @return The position's collateral tier (STABLE, CROSS_A, CROSS_B, or ISOLATED)
-     * @dev For cross-collateral positions, returns the tier of the riskiest asset
-     * @dev For isolated positions, returns ISOLATED tier regardless of asset
-     */
-    function getPositionTier(address user, uint256 positionId) external view returns (IASSETS.CollateralTier);
-
-    /**
-     * @notice Gets the current protocol config
-     * @return ProtocoConfig struct containing all protocol parameters
-     */
+    // Market Information
+    function market() external view returns (Market memory);
+    function mainConfig() external view returns (ProtocolConfig memory);
     function getConfig() external view returns (ProtocolConfig memory);
 
-    /**
-     * @notice Checks if the protocol is solvent based on total asset value and borrow amount
-     * @dev Ensures that the total asset value exceeds the total borrow amount
-     * @return A tuple containing:
-     *   - A boolean indicating if the protocol is solvent (total assets >= total borrows)
-     *   - The total asset value in USD terms
-     */
+    // Asset Information
+    function assetTVL(address asset) external view returns (uint256);
+    function assetDebtIsolated(address asset) external view returns (uint256);
+
+    // Position Information
+    function getUserPositionsCount(address user) external view returns (uint256);
+    function getUserPositions(address user) external view returns (UserPosition[] memory);
+    function getUserPosition(address user, uint256 positionId) external view returns (UserPosition memory);
+    function getPositionCollateralAssets(address user, uint256 positionId) external view returns (address[] memory);
+    function getCollateralAmount(address user, uint256 positionId, address asset) external view returns (uint256);
+
+    // Calculations
+    function calculateDebtWithInterest(address user, uint256 positionId) external view returns (uint256);
+    function calculateCreditLimit(address user, uint256 positionId) external view returns (uint256);
+    function calculateCollateralValue(address user, uint256 positionId) external view returns (uint256);
+    function calculateLimits(address user, uint256 positionId) external view returns (uint256 credit, uint256 liqLevel, uint256 value);
+    function healthFactor(address user, uint256 positionId) external view returns (uint256);
+    function getPositionLiquidationFee(address user, uint256 positionId) external view returns (uint256);
+    function getPositionTier(address user, uint256 positionId) external view returns (IASSETS.CollateralTier);
+
+    // Protocol Status
+    function isLiquidatable(address user, uint256 positionId) external view returns (bool);
     function isCollateralized() external view returns (bool, uint256);
-
-    /**
-     * @notice Boosts protocol yield by depositing USDC directly without minting yield tokens
-     * @dev This function allows depositing USDC to increase protocol reserves without affecting
-     *      exchange rates or diluting existing yield token holders. The deposited USDC becomes
-     *      part of the protocol's tracked balance and increases available liquidity for borrowers.
-     * @param amount Amount of USDC to deposit for yield boosting
-     * @custom:access-control Restricted to LendefiConstants.MANAGER_ROLE
-     */
-    function boostYield(uint256 amount) external;
-
-    /**
-     * @notice Reconciles any discrepancy between actual and tracked USDC balance
-     * @dev Can be called by governance to handle unexpected USDC transfers
-     * @custom:access-control Restricted to LendefiConstants.MANAGER_ROLE
-     */
-    // function reconcileUsdcBalance() external;
+    function utilization() external view returns (uint256);
+    function getSupplyRate() external view returns (uint256);
+    function getBorrowRate(IASSETS.CollateralTier tier) external view returns (uint256);
 }
