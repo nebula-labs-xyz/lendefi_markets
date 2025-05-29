@@ -19,20 +19,24 @@ pragma solidity 0.8.23;
  * @custom:copyright Copyright (c) 2025 Nebula Holding Inc. All rights reserved.
  */
 
-import {ERC4626Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC4626Upgradeable.sol";
-import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import {IPROTOCOL} from "../interfaces/IProtocol.sol";
+import {IECOSYSTEM} from "../interfaces/IEcosystem.sol";
+import {IPoRFeed} from "../interfaces/IPoRFeed.sol";
 import {IERC20, SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import {ERC4626Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC4626Upgradeable.sol";
 import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import {EnumerableMap} from "@openzeppelin/contracts/utils/structs/EnumerableMap.sol";
 import {LendefiConstants} from "./lib/LendefiConstants.sol";
 import {LendefiRates} from "./lib/LendefiRates.sol";
+import {LendefiPoRFeed} from "./LendefiPoRFeed.sol";
 import {IFlashLoanReceiver} from "../interfaces/IFlashLoanReceiver.sol";
-import {IPROTOCOL} from "../interfaces/IProtocol.sol";
-import {IECOSYSTEM} from "../interfaces/IEcosystem.sol";
+import {AutomationCompatibleInterface} from
+    "../vendor/@chainlink/contracts/src/v0.8/automation/AutomationCompatible.sol";
 
 /// @custom:oz-upgrades
 contract LendefiMarketVault is
@@ -41,9 +45,11 @@ contract LendefiMarketVault is
     AccessControlUpgradeable,
     ReentrancyGuardUpgradeable,
     PausableUpgradeable,
-    UUPSUpgradeable
+    UUPSUpgradeable,
+    AutomationCompatibleInterface
 {
     using SafeERC20 for IERC20;
+    using LendefiRates for *;
     using LendefiConstants for *;
     using EnumerableMap for EnumerableMap.AddressToUintMap;
 
@@ -54,10 +60,24 @@ contract LendefiMarketVault is
     uint256 public totalAccruedInterest;
     uint256 public totalBase;
     uint256 public totalBorrow;
+
+    /// @notice Counter for the number of times the upkeep has been performed
+    uint256 public counter;
+    /// @notice Interval for the upkeep to be performed
+    uint256 public interval;
+    /// @notice Timestamp of the last upkeep performed
+    uint256 public lastTimeStamp;
+    /// @notice Version of the contract
     uint32 public version;
-    IPROTOCOL.ProtocolConfig public protocolConfig; // Cached protocol config to avoid callbacks
+    /// @notice Address of the por feed for the token
+    address public porFeed;
+    /// @notice Address of the Lendefi protocol contract
     address public lendefiCore;
+    /// @notice Address of the ecosystem contract
     address public ecosystem;
+    /// @notice Protocol config
+    IPROTOCOL.ProtocolConfig public protocolConfig; // Cached protocol config to avoid callbacks
+    /// @notice Borrower debt
     mapping(address => uint256) public borrowerDebt;
 
     /**
@@ -75,8 +95,13 @@ contract LendefiMarketVault is
     event FlashLoan(address indexed user, address indexed receiver, address indexed asset, uint256 amount, uint256 fee);
     event FlashLoanFeeUpdated(uint256 oldFee, uint256 newFee);
     event Reward(address indexed user, uint256 amount);
-
+    /// @notice Emitted when the contract is undercollateralized
+    /// @param timestamp The timestamp of the event
+    /// @param tvl The total value locked in the protocol
+    /// @param totalSupply The total supply of the token
+    event CollateralizationAlert(uint256 timestamp, uint256 tvl, uint256 totalSupply);
     // ========== ERRORS ==========
+
     error ZeroAddress();
     error MEVSameBlockOperation();
     error ZeroAmount();
@@ -119,6 +144,10 @@ contract LendefiMarketVault is
         lendefiCore = core;
         ecosystem = _ecosystem;
         version = 1;
+        interval = 12 hours;
+        lastTimeStamp = block.timestamp;
+        porFeed = address(new LendefiPoRFeed());
+        IPoRFeed(porFeed).initialize(baseAsset, address(this), timelock);
         // Initialize protocol config from core
         protocolConfig = IPROTOCOL(core).getConfig();
 
@@ -216,6 +245,59 @@ contract LendefiMarketVault is
      */
     function unpause() external onlyRole(LendefiConstants.PAUSER_ROLE) {
         _unpause();
+    }
+
+    /**
+     * @notice Performs automated Proof of Reserve updates at regular intervals
+     * @dev This function is called by Chainlink Automation nodes when checkUpkeep returns true
+     *      It updates the PoR feed with current TVL and monitors protocol collateralization
+     *
+     * The function:
+     * 1. Updates lastTimeStamp to track intervals
+     * 2. Increments the counter for monitoring purposes
+     * 3. Checks protocol collateralization status
+     * 4. Updates the Chainlink PoR feed with current TVL
+     * 5. Emits alert if protocol becomes undercollateralized
+     *
+     * @custom:automation This function is part of Chainlink's AutomationCompatibleInterface
+     * @custom:interval Updates occur every 12 hours (defined by interval state variable)
+     *
+     * @custom:emits CollateralizationAlert when protocol becomes undercollateralized
+     */
+    function performUpkeep(bytes calldata /* performData */ ) external override {
+        if ((block.timestamp - lastTimeStamp) > interval) {
+            lastTimeStamp = block.timestamp;
+            counter = counter + 1;
+
+            // Use the stored TVL value instead of parameter
+            (bool collateralized, uint256 tvl) = IPROTOCOL(lendefiCore).isCollateralized();
+
+            // Update the reserves on the feed
+            IPoRFeed(porFeed).updateReserves(tvl);
+            if (!collateralized) {
+                emit CollateralizationAlert(block.timestamp, tvl, totalSupply());
+            }
+        }
+    }
+
+    /**
+     * @notice Checks if upkeep needs to be performed for Proof of Reserve updates
+     * @dev This function is called by Chainlink Automation nodes to determine if performUpkeep should be executed
+     *      The upkeep is needed when the time elapsed since the last update exceeds the defined interval
+     * @return upkeepNeeded Boolean indicating if upkeep should be performed
+     * @return performData Encoded data to be passed to performUpkeep (returns empty bytes)
+     *
+     * @custom:automation This function is part of Chainlink's AutomationCompatibleInterface
+     * @custom:interval The check uses the contract's interval variable (default 12 hours)
+     */
+    function checkUpkeep(bytes calldata /* checkData */ )
+        external
+        view
+        override
+        returns (bool upkeepNeeded, bytes memory performData)
+    {
+        upkeepNeeded = (block.timestamp - lastTimeStamp) > interval;
+        performData = "0x00";
     }
 
     /**
