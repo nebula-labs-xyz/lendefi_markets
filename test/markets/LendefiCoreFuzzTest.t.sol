@@ -406,7 +406,8 @@ contract LendefiCoreFuzzTest is BasicDeploy {
             rewardAmount: 1_000 ether,
             rewardInterval: 180 days,
             rewardableSupply: 100_000e6,
-            liquidatorThreshold: 20_000 ether
+            liquidatorThreshold: 20_000 ether,
+            flashLoanFee: uint32(flashFee)
         });
 
         vm.prank(address(timelockInstance));
