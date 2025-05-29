@@ -110,6 +110,7 @@ contract LendefiMarketVaultTest is BasicDeploy {
             address(marketCoreInstance),
             address(usdcInstance),
             address(ecoInstance),
+            address(assetsInstance),
             "Test",
             "TST"
         );
