@@ -38,7 +38,7 @@ import {ITransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transp
 import {LendefiMarketFactory} from "../contracts/markets/LendefiMarketFactory.sol";
 import {LendefiCore} from "../contracts/markets/LendefiCore.sol";
 import {LendefiMarketVault} from "../contracts/markets/LendefiMarketVault.sol";
-import {LendefiVault} from "../contracts/markets/LendefiVault.sol";
+import {LendefiPositionVault} from "../contracts/markets/LendefiPositionVault.sol";
 import {LendefiPoRFeed} from "../contracts/markets/LendefiPoRFeed.sol";
 
 contract BasicDeploy is Test {
@@ -686,7 +686,7 @@ contract BasicDeploy is Test {
         // Deploy implementations
         LendefiCore coreImpl = new LendefiCore();
         LendefiMarketVault marketVaultImpl = new LendefiMarketVault(); // For market vaults
-        LendefiVault positionVaultImpl = new LendefiVault(); // For user position vaults
+        LendefiPositionVault positionVaultImpl = new LendefiPositionVault(); // For user position vaults
         LendefiPoRFeed porFeedImpl = new LendefiPoRFeed();
 
         // Deploy factory using UUPS pattern with direct proxy deployment
