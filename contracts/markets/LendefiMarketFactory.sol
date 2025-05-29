@@ -56,6 +56,7 @@ contract LendefiMarketFactory is Initializable, AccessControlUpgradeable, UUPSUp
     error InvalidAsset();
     error MarketNotFound();
     error OnlyAdmin();
+    error CloneDeploymentFailed();
 
     // ========== CONSTRUCTOR ==========
     /// @custom:oz-upgrades-unsafe-allow constructor
@@ -116,6 +117,10 @@ contract LendefiMarketFactory is Initializable, AccessControlUpgradeable, UUPSUp
 
         // Create core contract
         address core = coreImplementation.clone();
+        // Verify clone was successful
+        if (core == address(0)) revert CloneDeploymentFailed();
+        if (core.code.length == 0) revert CloneDeploymentFailed();
+        
         bytes memory initData = abi.encodeWithSelector(
             LendefiCore.initialize.selector,
             timelock, // admin
@@ -127,12 +132,20 @@ contract LendefiMarketFactory is Initializable, AccessControlUpgradeable, UUPSUp
         LendefiCore coreInstance = LendefiCore(payable(address(proxy)));
 
         address baseVault = vaultImplementation.clone();
+        // Verify clone was successful
+        if (baseVault == address(0)) revert CloneDeploymentFailed();
+        if (baseVault.code.length == 0) revert CloneDeploymentFailed();
+        
         bytes memory vaultData =
             abi.encodeCall(LendefiMarketVault.initialize, (timelock, address(coreInstance), baseAsset, name, symbol));
         ERC1967Proxy vaultProxy = new ERC1967Proxy(address(baseVault), vaultData);
         LendefiMarketVault vaultInstance = LendefiMarketVault(payable(address(vaultProxy)));
 
         address porFeedClone = porFeed.clone();
+        // Verify clone was successful
+        if (porFeedClone == address(0)) revert CloneDeploymentFailed();
+        if (porFeedClone.code.length == 0) revert CloneDeploymentFailed();
+        
         //function initialize(address _asset, address _lendefiProtocol, address _updater, address _owner)
         IPoRFeed(porFeedClone).initialize(baseAsset, address(coreInstance), timelock, timelock);
 
