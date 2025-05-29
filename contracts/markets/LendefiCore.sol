@@ -65,7 +65,6 @@ contract LendefiCore is
     address public marketFactory;
     address public cVault;
 
-    uint256 public totalBorrow;
     uint256 public totalAccruedBorrowerInterest;
     uint256 public baseDecimals;
 
@@ -195,7 +194,8 @@ contract LendefiCore is
             rewardAmount: 2_000 ether, // 2,000 governance tokens
             rewardInterval: 180 * 24 * 60 * 5, // 180 days in blocks
             rewardableSupply: 100_000 * baseDecimals, // 100,000 base asset units
-            liquidatorThreshold: 20_000 ether // 20,000 governance tokens
+            liquidatorThreshold: 20_000 ether, // 20,000 governance tokens
+            flashLoanFee: 9 // 9 basis points (0.09%)
         });
 
         emit Initialized(marketInfo.baseAsset);
@@ -223,9 +223,13 @@ contract LendefiCore is
         if (config.rewardInterval < 90 days) revert InvalidInterval();
         if (config.rewardableSupply < 20_000 * baseDecimals) revert InvalidSupplyAmount();
         if (config.liquidatorThreshold < 10 ether) revert InvalidLiquidatorThreshold();
+        if (config.flashLoanFee > 100 || config.flashLoanFee < 1) revert InvalidFee();
 
         // Update the mainConfig struct
         mainConfig = config;
+        
+        // Update the vault's cached protocol config
+        baseVault.setProtocolConfig(config);
 
         // Emit a single consolidated event
         emit ProtocolConfigUpdated(
@@ -671,7 +675,7 @@ contract LendefiCore is
         if (currentDebt + amount > creditLimit) revert CreditLimitExceeded();
 
         // Update position and protocol state
-        totalBorrow += accruedInterest + amount;
+        // totalBorrow is now tracked in the vault via baseVault.borrow()
         position.debtAmount = currentDebt + amount;
         position.lastInterestAccrual = block.timestamp;
 
@@ -789,7 +793,7 @@ contract LendefiCore is
         // Slippage protection on total liquidation cost
         _validateSlippage(totalCost, expectedCost, maxSlippageBps);
 
-        totalBorrow -= position.debtAmount;
+        // totalBorrow is now tracked in the vault
         position.debtAmount = 0;
         position.status = PositionStatus.LIQUIDATED;
 
@@ -1055,13 +1059,14 @@ contract LendefiCore is
      * @return The current annual supply interest rate in baseDecimals format
      */
     function getSupplyRate() public view returns (uint256) {
-        return LendefiRates.getSupplyRate(
-            baseVault.totalSupply(),
-            totalBorrow,
-            baseVault.totalSuppliedLiquidity(),
-            mainConfig.profitTargetRate,
-            baseVault.totalAssets()
-        );
+        return baseVault.getSupplyRate();
+        // return LendefiRates.getSupplyRate(
+        //     baseVault.totalSupply(),
+        //     totalBorrow,
+        //     baseVault.totalSuppliedLiquidity(),
+        //     mainConfig.profitTargetRate,
+        //     baseVault.totalAssets()
+        // );
     }
 
     /**
@@ -1108,7 +1113,7 @@ contract LendefiCore is
      * @return True if the protocol is solvent, false otherwise, and amount of total asset value
      */
     function isCollateralized() public view returns (bool, uint256) {
-        uint256 totalAssetValue = baseVault.totalAssets() - totalBorrow;
+        uint256 totalAssetValue = baseVault.totalAssets() - baseVault.totalBorrow();
         uint256 length = assetTVLinUSD.length();
 
         for (uint256 i = 0; i < length; i++) {
@@ -1116,8 +1121,17 @@ contract LendefiCore is
             totalAssetValue += value;
         }
 
-        return (totalAssetValue >= totalBorrow, totalAssetValue);
+        return (totalAssetValue >= baseVault.totalBorrow(), totalAssetValue);
     }
+
+    /**
+     * @notice Gets the total amount borrowed across all positions
+     * @return The total borrowed amount in base asset units
+     */
+    function totalBorrow() external view returns (uint256) {
+        return baseVault.totalBorrow();
+    }
+
     // ========== INTERNAL FUNCTIONS ==========
 
     /**
@@ -1297,8 +1311,7 @@ contract LendefiCore is
             actualAmount = proposedAmount > balance ? balance : proposedAmount;
             // Amount tracked in vault
 
-            // Update total protocol debt
-            totalBorrow = totalBorrow + (balance - actualAmount) - position.debtAmount;
+            // totalBorrow is now tracked in the vault via baseVault.repay()
 
             // Update position state
             position.debtAmount = balance - actualAmount;
