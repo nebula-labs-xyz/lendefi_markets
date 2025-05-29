@@ -350,9 +350,9 @@ interface IPROTOCOL {
      * @param vaultImplementation The address of the vault implementation contract
      */
     function initialize(
-        address admin, 
-        address govToken_, 
-        address assetsModule_, 
+        address admin,
+        address govToken_,
+        address assetsModule_,
         address treasury_,
         address vaultImplementation
     ) external;
@@ -471,61 +471,61 @@ interface IPROTOCOL {
      * @return The governance token contract address
      */
     function govToken() external view returns (address);
-    
+
     /**
      * @notice Gets the address of the treasury contract
      * @return The treasury contract address
      */
     function treasury() external view returns (address);
-    
+
     /**
      * @notice Gets the address of the base asset
      * @return The base asset contract address (e.g., USDC)
      */
     function baseAsset() external view returns (address);
-    
+
     /**
      * @notice Gets the address of the market factory contract
      * @return The market factory contract address
      */
     function marketFactory() external view returns (address);
-    
+
     /**
      * @notice Gets the address of the cloneable vault implementation
      * @return The cloneable vault contract address
      */
     function cVault() external view returns (address);
-    
+
     /**
      * @notice Gets the total amount borrowed across all positions
      * @return The total borrowed amount in base asset units
      */
     function totalBorrow() external view returns (uint256);
-    
+
     /**
      * @notice Gets the total accrued borrower interest
      * @return The total accrued interest amount
      */
     function totalAccruedBorrowerInterest() external view returns (uint256);
-    
+
     /**
      * @notice Gets the base asset decimal multiplier
      * @return The decimal multiplier (10^decimals)
      */
     function baseDecimals() external view returns (uint256);
-    
+
     /**
      * @notice Gets the market configuration data
      * @return The market configuration struct
      */
     function market() external view returns (Market memory);
-    
+
     /**
      * @notice Gets the main protocol configuration
      * @return The protocol configuration struct
      */
     function getMainConfig() external view returns (ProtocolConfig memory);
-    
+
     /**
      * @notice Gets the total value locked for a specific asset
      * @param asset The address of the asset to query
@@ -547,14 +547,14 @@ interface IPROTOCOL {
      * @return The number of positions owned by the user
      */
     function getUserPositionsCount(address user) external view returns (uint256);
-    
+
     /**
      * @notice Gets all positions for a user
      * @param user The address of the user to query
      * @return Array of all user positions
      */
     function getUserPositions(address user) external view returns (UserPosition[] memory);
-    
+
     /**
      * @notice Gets a specific position for a user
      * @param user The address of the position owner
@@ -562,7 +562,7 @@ interface IPROTOCOL {
      * @return The user position data
      */
     function getUserPosition(address user, uint256 positionId) external view returns (UserPosition memory);
-    
+
     /**
      * @notice Gets all collateral assets in a position
      * @param user The address of the position owner
@@ -570,7 +570,7 @@ interface IPROTOCOL {
      * @return Array of collateral asset addresses
      */
     function getPositionCollateralAssets(address user, uint256 positionId) external view returns (address[] memory);
-    
+
     /**
      * @notice Gets the amount of a specific collateral asset in a position
      * @param user The address of the position owner
@@ -588,7 +588,7 @@ interface IPROTOCOL {
      * @return The total debt amount including interest
      */
     function calculateDebtWithInterest(address user, uint256 positionId) external view returns (uint256);
-    
+
     /**
      * @notice Calculates maximum borrowing capacity for a position
      * @param user The address of the position owner
@@ -596,7 +596,7 @@ interface IPROTOCOL {
      * @return The maximum amount that can be borrowed
      */
     function calculateCreditLimit(address user, uint256 positionId) external view returns (uint256);
-    
+
     /**
      * @notice Calculates total USD value of collateral in a position
      * @param user The address of the position owner
@@ -604,7 +604,7 @@ interface IPROTOCOL {
      * @return The total collateral value in USD
      */
     function calculateCollateralValue(address user, uint256 positionId) external view returns (uint256);
-    
+
     /**
      * @notice Calculates credit limit, liquidation level, and collateral value
      * @param user The address of the position owner
@@ -617,7 +617,7 @@ interface IPROTOCOL {
         external
         view
         returns (uint256 credit, uint256 liqLevel, uint256 value);
-    
+
     /**
      * @notice Calculates health factor (collateral/debt ratio)
      * @param user The address of the position owner
@@ -625,7 +625,7 @@ interface IPROTOCOL {
      * @return The health factor ratio (1.0 = 1e6)
      */
     function healthFactor(address user, uint256 positionId) external view returns (uint256);
-    
+
     /**
      * @notice Gets liquidation fee percentage for a position
      * @param user The address of the position owner
@@ -633,7 +633,7 @@ interface IPROTOCOL {
      * @return The liquidation fee percentage
      */
     function getPositionLiquidationFee(address user, uint256 positionId) external view returns (uint256);
-    
+
     /**
      * @notice Gets the risk tier of a position's collateral
      * @param user The address of the position owner
@@ -650,20 +650,20 @@ interface IPROTOCOL {
      * @return True if the position can be liquidated
      */
     function isLiquidatable(address user, uint256 positionId) external view returns (bool);
-    
+
     /**
      * @notice Checks if the protocol is properly collateralized
      * @return isCollateralized True if protocol is properly collateralized
      * @return collateralizationRatio The current collateralization ratio
      */
     function isCollateralized() external view returns (bool isCollateralized, uint256 collateralizationRatio);
-    
+
     /**
      * @notice Gets current supply interest rate for liquidity providers
      * @return The annual supply interest rate
      */
     function getSupplyRate() external view returns (uint256);
-    
+
     /**
      * @notice Gets borrow rate for a specific collateral tier
      * @param tier The collateral tier to query
