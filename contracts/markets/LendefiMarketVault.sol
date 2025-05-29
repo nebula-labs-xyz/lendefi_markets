@@ -31,6 +31,7 @@ pragma solidity 0.8.23;
 
 import {IPROTOCOL} from "../interfaces/IProtocol.sol";
 import {IECOSYSTEM} from "../interfaces/IEcosystem.sol";
+import {IASSETS} from "../interfaces/IASSETS.sol";
 import {IPoRFeed} from "../interfaces/IPoRFeed.sol";
 import {IERC20, SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
@@ -112,6 +113,10 @@ contract LendefiMarketVault is
     /// @notice Address of the ecosystem contract managing governance rewards
     /// @dev Handles distribution of governance tokens to liquidity providers
     address public ecosystem;
+
+    /// @notice Address of the assets module contract for asset management
+    /// @dev Used for accessing asset tier information and jump rates
+    address public assetsModule;
 
     /// @notice Cached protocol configuration to avoid repeated external calls
     /// @dev Contains interest rates, fees, and reward parameters
@@ -233,6 +238,7 @@ contract LendefiMarketVault is
      * @param core Address of the LendefiCore contract for this market
      * @param baseAsset Address of the ERC20 token used as the base asset
      * @param _ecosystem Address of the ecosystem contract for reward distribution
+     * @param _assetsModule Address of the assets module contract for asset management
      * @param name Name for the ERC20 vault token (e.g., "Lendefi USDC Vault")
      * @param symbol Symbol for the ERC20 vault token (e.g., "lendUSDC")
      *
@@ -259,6 +265,7 @@ contract LendefiMarketVault is
         address core,
         address baseAsset,
         address _ecosystem,
+        address _assetsModule,
         string memory name,
         string memory symbol
     ) external initializer {
@@ -266,10 +273,12 @@ contract LendefiMarketVault is
         if (timelock == address(0)) revert ZeroAddress();
         if (core == address(0)) revert ZeroAddress();
         if (_ecosystem == address(0)) revert ZeroAddress();
+        if (_assetsModule == address(0)) revert ZeroAddress();
 
         baseDecimals = 10 ** IERC20Metadata(baseAsset).decimals();
         lendefiCore = core;
         ecosystem = _ecosystem;
+        assetsModule = _assetsModule;
         version = 1;
         interval = 12 hours;
         lastTimeStamp = block.timestamp;
@@ -921,6 +930,22 @@ contract LendefiMarketVault is
     function getSupplyRate() public view returns (uint256) {
         return LendefiRates.getSupplyRate(
             totalSupply(), totalBorrow, totalSuppliedLiquidity, protocolConfig.profitTargetRate, totalAssets()
+        );
+    }
+
+    /**
+     * @notice Calculates the current borrow interest rate for a specific collateral tier
+     * @dev Based on utilization, base rate, supply rate, and tier-specific jump rate
+     * @param tier The collateral tier to calculate the borrow rate for
+     * @return The current annual borrow interest rate in baseDecimals format
+     */
+    function getBorrowRate(IASSETS.CollateralTier tier) public view returns (uint256) {
+        return LendefiRates.getBorrowRate(
+            utilization(),
+            protocolConfig.borrowRate,
+            protocolConfig.profitTargetRate,
+            getSupplyRate(),
+            IASSETS(assetsModule).getTierJumpRate(tier)
         );
     }
 
