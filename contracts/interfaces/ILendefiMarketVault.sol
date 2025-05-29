@@ -2,6 +2,7 @@
 pragma solidity 0.8.23;
 
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
+import {IPROTOCOL} from "./IProtocol.sol";
 
 interface ILendefiMarketVault is IERC4626 {
     // ========== EVENTS ==========
@@ -32,7 +33,6 @@ interface ILendefiMarketVault is IERC4626 {
     function totalBase() external view returns (uint256);
     function totalBorrow() external view returns (uint256);
     function version() external view returns (uint32);
-    function flashLoanFee() external view returns (uint32);
     function lendefiCore() external view returns (address);
     function ecosystem() external view returns (address);
     function borrowerDebt(address borrower) external view returns (uint256);
@@ -64,11 +64,12 @@ interface ILendefiMarketVault is IERC4626 {
 
     function pause() external;
     function unpause() external;
-    function setFlashLoanFee(uint32 newFee) external;
+    function setProtocolConfig(IPROTOCOL.ProtocolConfig calldata _config) external;
 
     // ========== VIEW FUNCTIONS ==========
 
     function totalAssets() external view returns (uint256);
     function utilization() external view returns (uint256);
     function isRewardable(address user) external view returns (bool);
+    function getSupplyRate() external view returns (uint256);
 }
