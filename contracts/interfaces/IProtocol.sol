@@ -11,10 +11,11 @@ interface IPROTOCOL {
      * @dev Used to track position lifecycle and determine valid operations
      */
     enum PositionStatus {
-        INACTIVE,   // Default state, never used
-        ACTIVE,     // Position is active and can be modified
+        INACTIVE, // Default state, never used
+        ACTIVE, // Position is active and can be modified
         LIQUIDATED, // Position has been liquidated
-        CLOSED      // Position has been voluntarily closed by the user
+        CLOSED // Position has been voluntarily closed by the user
+
     }
 
     /**
@@ -22,10 +23,11 @@ interface IPROTOCOL {
      * @dev Used to determine borrow rates and liquidation parameters
      */
     enum CollateralTier {
-        STABLE,     // Stablecoins with minimal volatility
-        CROSS_A,    // Major cryptocurrencies with low-medium volatility
-        CROSS_B,    // Altcoins with medium-high volatility
-        ISOLATED    // High-risk assets that must be isolated
+        STABLE, // Stablecoins with minimal volatility
+        CROSS_A, // Major cryptocurrencies with low-medium volatility
+        CROSS_B, // Altcoins with medium-high volatility
+        ISOLATED // High-risk assets that must be isolated
+
     }
 
     /**
@@ -44,12 +46,12 @@ interface IPROTOCOL {
      * @dev Centralized storage for all adjustable protocol parameters
      */
     struct ProtocolConfig {
-        uint256 profitTargetRate;      // Rate in 1e6
-        uint256 borrowRate;            // Rate in 1e6
-        uint256 rewardAmount;          // Amount of governance tokens
-        uint256 rewardInterval;        // Reward interval in blocks
-        uint256 rewardableSupply;      // Minimum rewardable supply
-        uint256 liquidatorThreshold;   // Minimum liquidator token threshold
+        uint256 profitTargetRate; // Rate in 1e6
+        uint256 borrowRate; // Rate in 1e6
+        uint256 rewardAmount; // Amount of governance tokens
+        uint256 rewardInterval; // Reward interval in blocks
+        uint256 rewardableSupply; // Minimum rewardable supply
+        uint256 liquidatorThreshold; // Minimum liquidator token threshold
     }
 
     /**
@@ -57,11 +59,11 @@ interface IPROTOCOL {
      * @dev Core data structure tracking user's debt and position configuration
      */
     struct UserPosition {
-        address vault;                 // Address of the vault contract for this position
-        bool isIsolated;              // Whether position uses isolation mode
-        PositionStatus status;         // Current lifecycle status of the position
-        uint256 debtAmount;           // Current debt principal without interest
-        uint256 lastInterestAccrual;  // Timestamp of last interest accrual
+        address vault; // Address of the vault contract for this position
+        bool isIsolated; // Whether position uses isolation mode
+        PositionStatus status; // Current lifecycle status of the position
+        uint256 debtAmount; // Current debt principal without interest
+        uint256 lastInterestAccrual; // Timestamp of last interest accrual
     }
 
     /**
@@ -69,9 +71,9 @@ interface IPROTOCOL {
      * @dev Contains pool address and TWAP parameters for price feeds
      */
     struct UniswapPoolConfig {
-        address pool;                 // Uniswap V3 pool address
-        uint32 twapPeriod;           // Time period for TWAP calculation
-        uint8 active;                // Whether this oracle is active
+        address pool; // Uniswap V3 pool address
+        uint32 twapPeriod; // Time period for TWAP calculation
+        uint8 active; // Whether this oracle is active
     }
 
     /**
@@ -79,8 +81,8 @@ interface IPROTOCOL {
      * @dev Contains Chainlink aggregator addresses and activation status
      */
     struct ChainlinkOracleConfig {
-        address oracleUSD;           // Chainlink aggregator for USD price
-        uint8 active;                // Whether this oracle is active
+        address oracleUSD; // Chainlink aggregator for USD price
+        uint8 active; // Whether this oracle is active
     }
 
     /**
@@ -88,18 +90,18 @@ interface IPROTOCOL {
      * @dev Comprehensive asset data structure for collateral management
      */
     struct Asset {
-        uint8 active;                    // Whether asset is active for lending
-        uint8 decimals;                  // Token decimals
-        uint16 borrowThreshold;          // LTV ratio for borrowing (basis points)
-        uint16 liquidationThreshold;     // Liquidation threshold (basis points)
-        uint256 maxSupplyThreshold;      // Maximum supply allowed
-        uint256 isolationDebtCap;        // Maximum debt in isolation mode
-        uint8 assetMinimumOracles;       // Minimum number of oracles required
-        address porFeed;                 // Proof of Reserve feed address
-        OracleType primaryOracleType;    // Primary oracle type to use
-        CollateralTier tier;             // Risk tier classification
-        ChainlinkOracleConfig chainlinkConfig;     // Chainlink configuration
-        UniswapPoolConfig poolConfig;              // Uniswap V3 configuration
+        uint8 active; // Whether asset is active for lending
+        uint8 decimals; // Token decimals
+        uint16 borrowThreshold; // LTV ratio for borrowing (basis points)
+        uint16 liquidationThreshold; // Liquidation threshold (basis points)
+        uint256 maxSupplyThreshold; // Maximum supply allowed
+        uint256 isolationDebtCap; // Maximum debt in isolation mode
+        uint8 assetMinimumOracles; // Minimum number of oracles required
+        address porFeed; // Proof of Reserve feed address
+        OracleType primaryOracleType; // Primary oracle type to use
+        CollateralTier tier; // Risk tier classification
+        ChainlinkOracleConfig chainlinkConfig; // Chainlink configuration
+        UniswapPoolConfig poolConfig; // Uniswap V3 configuration
     }
 
     /**
@@ -107,15 +109,15 @@ interface IPROTOCOL {
      * @dev Contains all market-specific contract addresses and metadata
      */
     struct Market {
-        address core;                // Core lending logic contract
-        address baseVault;           // Vault handling base asset
-        address baseAsset;           // Base asset address (e.g. USDC)
-        address porFeed;             // Proof of Reserve feed
-        uint256 decimals;            // Base asset decimals
-        string name;                 // Market name (e.g. "USDC Market")
-        string symbol;               // Market symbol
-        uint256 createdAt;           // Creation timestamp
-        bool active;                 // Whether market is active
+        address core; // Core lending logic contract
+        address baseVault; // Vault handling base asset
+        address baseAsset; // Base asset address (e.g. USDC)
+        address porFeed; // Proof of Reserve feed
+        uint256 decimals; // Base asset decimals
+        string name; // Market name (e.g. "USDC Market")
+        string symbol; // Market symbol
+        uint256 createdAt; // Creation timestamp
+        bool active; // Whether market is active
     }
 
     // ========== EVENTS ==========
@@ -341,12 +343,14 @@ interface IPROTOCOL {
      * @param govToken_ The address of the governance token
      * @param assetsModule_ The address of the assets module
      * @param treasury_ The address of the treasury contract
+     * @param vaultImplementation The address of the vault implementation contract
      */
     function initialize(
-        address admin,
-        address govToken_,
-        address assetsModule_,
-        address treasury_
+        address admin, 
+        address govToken_, 
+        address assetsModule_, 
+        address treasury_,
+        address vaultImplementation
     ) external;
 
     /**
@@ -458,43 +462,208 @@ interface IPROTOCOL {
     // ========== VIEW FUNCTIONS ==========
 
     // State Variables
+    /**
+     * @notice Gets the address of the governance token
+     * @return The governance token contract address
+     */
     function govToken() external view returns (address);
+    
+    /**
+     * @notice Gets the address of the treasury contract
+     * @return The treasury contract address
+     */
     function treasury() external view returns (address);
+    
+    /**
+     * @notice Gets the address of the base asset
+     * @return The base asset contract address (e.g., USDC)
+     */
     function baseAsset() external view returns (address);
+    
+    /**
+     * @notice Gets the address of the market factory contract
+     * @return The market factory contract address
+     */
     function marketFactory() external view returns (address);
+    
+    /**
+     * @notice Gets the address of the cloneable vault implementation
+     * @return The cloneable vault contract address
+     */
     function cVault() external view returns (address);
+    
+    /**
+     * @notice Gets the total amount borrowed across all positions
+     * @return The total borrowed amount in base asset units
+     */
     function totalBorrow() external view returns (uint256);
+    
+    /**
+     * @notice Gets the total accrued borrower interest
+     * @return The total accrued interest amount
+     */
     function totalAccruedBorrowerInterest() external view returns (uint256);
+    
+    /**
+     * @notice Gets the base asset decimal multiplier
+     * @return The decimal multiplier (10^decimals)
+     */
     function baseDecimals() external view returns (uint256);
+    
+    /**
+     * @notice Gets the market configuration data
+     * @return The market configuration struct
+     */
     function market() external view returns (Market memory);
-    function mainConfig() external view returns (ProtocolConfig memory);
+    
+    /**
+     * @notice Gets the main protocol configuration
+     * @return The protocol configuration struct
+     */
+    function getMainConfig() external view returns (ProtocolConfig memory);
+    
+    /**
+     * @notice Gets the total value locked for a specific asset
+     * @param asset The address of the asset to query
+     * @return The total value locked for the asset
+     */
     function assetTVL(address asset) external view returns (uint256);
 
     // Configuration
+    /**
+     * @notice Gets the current protocol configuration
+     * @return The current protocol configuration struct
+     */
     function getConfig() external view returns (ProtocolConfig memory);
 
     // Position Information
+    /**
+     * @notice Gets the number of positions for a user
+     * @param user The address of the user to query
+     * @return The number of positions owned by the user
+     */
     function getUserPositionsCount(address user) external view returns (uint256);
+    
+    /**
+     * @notice Gets all positions for a user
+     * @param user The address of the user to query
+     * @return Array of all user positions
+     */
     function getUserPositions(address user) external view returns (UserPosition[] memory);
+    
+    /**
+     * @notice Gets a specific position for a user
+     * @param user The address of the position owner
+     * @param positionId The ID of the position to query
+     * @return The user position data
+     */
     function getUserPosition(address user, uint256 positionId) external view returns (UserPosition memory);
+    
+    /**
+     * @notice Gets all collateral assets in a position
+     * @param user The address of the position owner
+     * @param positionId The ID of the position to query
+     * @return Array of collateral asset addresses
+     */
     function getPositionCollateralAssets(address user, uint256 positionId) external view returns (address[] memory);
+    
+    /**
+     * @notice Gets the amount of a specific collateral asset in a position
+     * @param user The address of the position owner
+     * @param positionId The ID of the position to query
+     * @param asset The address of the collateral asset
+     * @return The amount of the specified asset in the position
+     */
     function getCollateralAmount(address user, uint256 positionId, address asset) external view returns (uint256);
 
     // Calculations
+    /**
+     * @notice Calculates current debt including accrued interest
+     * @param user The address of the position owner
+     * @param positionId The ID of the position to calculate
+     * @return The total debt amount including interest
+     */
     function calculateDebtWithInterest(address user, uint256 positionId) external view returns (uint256);
+    
+    /**
+     * @notice Calculates maximum borrowing capacity for a position
+     * @param user The address of the position owner
+     * @param positionId The ID of the position to calculate
+     * @return The maximum amount that can be borrowed
+     */
     function calculateCreditLimit(address user, uint256 positionId) external view returns (uint256);
+    
+    /**
+     * @notice Calculates total USD value of collateral in a position
+     * @param user The address of the position owner
+     * @param positionId The ID of the position to calculate
+     * @return The total collateral value in USD
+     */
     function calculateCollateralValue(address user, uint256 positionId) external view returns (uint256);
-    function calculateLimits(address user, uint256 positionId) 
-        external 
-        view 
+    
+    /**
+     * @notice Calculates credit limit, liquidation level, and collateral value
+     * @param user The address of the position owner
+     * @param positionId The ID of the position to calculate
+     * @return credit The maximum borrowing capacity
+     * @return liqLevel The liquidation threshold level
+     * @return value The total collateral value
+     */
+    function calculateLimits(address user, uint256 positionId)
+        external
+        view
         returns (uint256 credit, uint256 liqLevel, uint256 value);
+    
+    /**
+     * @notice Calculates health factor (collateral/debt ratio)
+     * @param user The address of the position owner
+     * @param positionId The ID of the position to calculate
+     * @return The health factor ratio (1.0 = 1e6)
+     */
     function healthFactor(address user, uint256 positionId) external view returns (uint256);
+    
+    /**
+     * @notice Gets liquidation fee percentage for a position
+     * @param user The address of the position owner
+     * @param positionId The ID of the position to query
+     * @return The liquidation fee percentage
+     */
     function getPositionLiquidationFee(address user, uint256 positionId) external view returns (uint256);
+    
+    /**
+     * @notice Gets the risk tier of a position's collateral
+     * @param user The address of the position owner
+     * @param positionId The ID of the position to query
+     * @return The collateral tier classification
+     */
     function getPositionTier(address user, uint256 positionId) external view returns (IASSETS.CollateralTier);
 
     // Protocol Status
+    /**
+     * @notice Checks if a position is eligible for liquidation
+     * @param user The address of the position owner
+     * @param positionId The ID of the position to check
+     * @return True if the position can be liquidated
+     */
     function isLiquidatable(address user, uint256 positionId) external view returns (bool);
-    function isCollateralized() external view returns (bool, uint256);
+    
+    /**
+     * @notice Checks if the protocol is properly collateralized
+     * @return isCollateralized True if protocol is properly collateralized
+     * @return collateralizationRatio The current collateralization ratio
+     */
+    function isCollateralized() external view returns (bool isCollateralized, uint256 collateralizationRatio);
+    
+    /**
+     * @notice Gets current supply interest rate for liquidity providers
+     * @return The annual supply interest rate
+     */
     function getSupplyRate() external view returns (uint256);
+    
+    /**
+     * @notice Gets borrow rate for a specific collateral tier
+     * @param tier The collateral tier to query
+     * @return The annual borrow rate for the tier
+     */
     function getBorrowRate(IASSETS.CollateralTier tier) external view returns (uint256);
 }
