@@ -106,7 +106,12 @@ contract LendefiMarketVaultTest is BasicDeploy {
     function test_Revert_InitializeTwice() public {
         vm.expectRevert();
         marketVaultInstance.initialize(
-            address(timelockInstance), address(marketCoreInstance), address(usdcInstance), address(ecoInstance), "Test", "TST"
+            address(timelockInstance),
+            address(marketCoreInstance),
+            address(usdcInstance),
+            address(ecoInstance),
+            "Test",
+            "TST"
         );
     }
 
@@ -285,7 +290,7 @@ contract LendefiMarketVaultTest is BasicDeploy {
         bytes memory params = "";
 
         // Get expected fee from protocol config
-        (, , , , , , uint32 fee) = marketVaultInstance.protocolConfig();
+        (,,,,,, uint32 fee) = marketVaultInstance.protocolConfig();
         uint256 expectedFee = (loanAmount * fee) / 10000;
 
         uint256 vaultBalanceBefore = usdcInstance.balanceOf(address(marketVaultInstance));
@@ -314,7 +319,7 @@ contract LendefiMarketVaultTest is BasicDeploy {
         // Since protocolConfig might not be properly initialized during factory deployment,
         // we need to set it manually
         IPROTOCOL.ProtocolConfig memory config = marketCoreInstance.getConfig();
-        
+
         vm.prank(address(marketCoreInstance));
         marketVaultInstance.setProtocolConfig(config);
 
