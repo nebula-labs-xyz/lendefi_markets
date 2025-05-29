@@ -349,7 +349,7 @@ contract LendefiAssets is
             // Verify clone was successful
             if (config.porFeed == address(0)) revert CloneDeploymentFailed();
             if (config.porFeed.code.length == 0) revert CloneDeploymentFailed();
-            IPoRFeed(config.porFeed).initialize(asset, address(lendefiInstance), address(this), timelock);
+            IPoRFeed(config.porFeed).initialize(asset, address(this), timelock);
         } else {
             if (config.porFeed == assetInfo[asset].porFeed) revert InvalidParameter("porFeed", 0);
         }
