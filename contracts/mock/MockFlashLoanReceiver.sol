@@ -11,15 +11,15 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 contract MockFlashLoanReceiver is IFlashLoanReceiver {
     bool public shouldFail;
     bool public shouldReturnLessFunds;
-    
+
     function setShouldFail(bool _fail) external {
         shouldFail = _fail;
     }
-    
+
     function setShouldReturnLessFunds(bool _returnLess) external {
         shouldReturnLessFunds = _returnLess;
     }
-    
+
     function executeOperation(
         address asset,
         uint256 amount,
@@ -30,17 +30,17 @@ contract MockFlashLoanReceiver is IFlashLoanReceiver {
         if (shouldFail) {
             return false;
         }
-        
+
         // Calculate repayment
         uint256 repayAmount = amount + fee;
-        
+
         if (shouldReturnLessFunds) {
             repayAmount = amount; // Don't include fee
         }
-        
+
         // Repay the flash loan
         IERC20(asset).transfer(msg.sender, repayAmount);
-        
+
         return true;
     }
 }
