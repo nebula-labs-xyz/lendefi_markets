@@ -1065,6 +1065,21 @@ contract LendefiCore is Initializable, AccessControlUpgradeable, ReentrancyGuard
     }
 
     /**
+     * @notice Gets a specific position for a user
+     * @param user The address of the position owner
+     * @param positionId The ID of the position
+     * @return The user position data
+     */
+    function getUserPosition(address user, uint256 positionId)
+        public
+        view
+        validPosition(user, positionId)
+        returns (UserPosition memory)
+    {
+        return positions[user][positionId];
+    }
+
+    /**
      * @notice Gets the liquidation fee percentage for a position
      * @dev Based on the highest risk tier among the position's collateral assets
      * @param user Address of the position owner
@@ -1131,6 +1146,23 @@ contract LendefiCore is Initializable, AccessControlUpgradeable, ReentrancyGuard
         returns (address[] memory)
     {
         return positionCollateral[user][positionId].keys();
+    }
+
+    /**
+     * @notice Gets the collateral amount for a specific asset in a position
+     * @param user Address of the position owner
+     * @param positionId ID of the position
+     * @param asset Address of the collateral asset
+     * @return The amount of the specified asset in the position
+     */
+    function getCollateralAmount(address user, uint256 positionId, address asset)
+        public
+        view
+        validPosition(user, positionId)
+        returns (uint256)
+    {
+        (bool exists, uint256 amount) = positionCollateral[user][positionId].tryGet(asset);
+        return exists ? amount : 0;
     }
 
     /**
