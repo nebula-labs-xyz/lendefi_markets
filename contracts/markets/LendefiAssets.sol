@@ -131,6 +131,7 @@ contract LendefiAssets is
      * @param timelock_ Address of the timelock_ contract that will have admin privileges
      * @param multisig Address of the multisig wallet for emergency controls
      * @param usdc_ USDC address
+     * @param porFeed_ Proof of Reserve feed address
      * @custom:security Sets up the initial access control roles:
      * - DEFAULT_ADMIN_ROLE: timelock_
      * - MANAGER_ROLE: timelock_
@@ -475,6 +476,7 @@ contract LendefiAssets is
     /**
      * @notice Gets the price from the Chainlink oracle
      * @param asset The asset to get price for
+     * @param tvl The total value locked for the asset
      * @return usdValue The price in USD (scaled by 1e8)
      */
     function updateAssetPoRFeed(address asset, uint256 tvl)
