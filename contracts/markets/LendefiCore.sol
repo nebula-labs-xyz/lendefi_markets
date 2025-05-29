@@ -227,7 +227,7 @@ contract LendefiCore is
 
         // Update the mainConfig struct
         mainConfig = config;
-        
+
         // Update the vault's cached protocol config
         baseVault.setProtocolConfig(config);
 
@@ -281,14 +281,18 @@ contract LendefiCore is
         nonReentrant
         whenNotPaused
     {
+        // Cache state variables to avoid multiple SLOADs
+        address cachedBaseAsset = baseAsset;
+        ILendefiMarketVault cachedBaseVault = baseVault;
+
         // Transfer tokens from user to this contract
-        IERC20(baseAsset).safeTransferFrom(msg.sender, address(this), amount);
+        IERC20(cachedBaseAsset).safeTransferFrom(msg.sender, address(this), amount);
 
         // Approve vault to spend tokens
-        IERC20(baseAsset).forceApprove(address(baseVault), amount);
+        IERC20(cachedBaseAsset).forceApprove(address(cachedBaseVault), amount);
 
         emit DepositLiquidity(msg.sender, amount);
-        uint256 sharesOut = baseVault.deposit(amount, msg.sender);
+        uint256 sharesOut = cachedBaseVault.deposit(amount, msg.sender);
         _validateSlippage(sharesOut, expectedShares, maxSlippageBps);
     }
 
@@ -473,19 +477,23 @@ contract LendefiCore is
         EnumerableMap.AddressToUintMap storage collaterals = positionCollateral[msg.sender][positionId];
         address vault = positions[msg.sender][positionId].vault;
 
+        // Cache vault reference only to reduce stack depth
+        ILendefiPositionVault cachedVault = ILendefiPositionVault(vault);
+
         // Process all assets before clearing the mapping
         uint256 length = collaterals.length();
         for (uint256 i = 0; i < length; i++) {
             (address asset, uint256 amount) = collaterals.at(i);
 
             if (amount > 0) {
-                uint256 newTVL = assetTVL[asset] - amount;
+                uint256 currentTVL = assetTVL[asset];
+                uint256 newTVL = currentTVL - amount;
                 assetTVL[asset] = newTVL;
                 uint256 usdValue = assetsModule.updateAssetPoRFeed(asset, newTVL);
                 assetTVLinUSD.set(asset, usdValue);
                 emit TVLUpdated(asset, newTVL);
                 emit WithdrawCollateral(msg.sender, positionId, asset, amount);
-                ILendefiPositionVault(vault).withdrawToken(asset, amount);
+                cachedVault.withdrawToken(asset, amount);
             }
         }
 
@@ -894,12 +902,14 @@ contract LendefiCore is
         EnumerableMap.AddressToUintMap storage collaterals = positionCollateral[user][positionId];
         uint256 len = collaterals.length();
 
+        // Cache base asset params to avoid repeated calls
+        IASSETS.AssetCalculationParams memory paramsBase = assetsModule.getAssetCalculationParams(baseAsset);
+
         for (uint256 i; i < len; i++) {
             (address asset, uint256 amount) = collaterals.at(i);
             if (amount == 0) continue;
 
             IASSETS.AssetCalculationParams memory params = assetsModule.getAssetCalculationParams(asset);
-            IASSETS.AssetCalculationParams memory paramsBase = assetsModule.getAssetCalculationParams(baseAsset);
 
             // Use FullMath.mulDiv for maximum precision without overflow
             // First calculate the base value conversion
@@ -1113,7 +1123,9 @@ contract LendefiCore is
      * @return True if the protocol is solvent, false otherwise, and amount of total asset value
      */
     function isCollateralized() public view returns (bool, uint256) {
-        uint256 totalAssetValue = baseVault.totalAssets() - baseVault.totalBorrow();
+        uint256 totalBorrowAmount = baseVault.totalBorrow();
+
+        uint256 totalAssetValue = baseVault.totalAssets() - totalBorrowAmount;
         uint256 length = assetTVLinUSD.length();
 
         for (uint256 i = 0; i < length; i++) {
@@ -1121,7 +1133,7 @@ contract LendefiCore is
             totalAssetValue += value;
         }
 
-        return (totalAssetValue >= baseVault.totalBorrow(), totalAssetValue);
+        return (totalAssetValue >= totalBorrowAmount, totalAssetValue);
     }
 
     /**
@@ -1184,6 +1196,7 @@ contract LendefiCore is
         if (assetsModule.isAssetAtCapacity(asset, amount)) revert AssetCapacityReached(); // Asset capacity reached
 
         UserPosition storage position = positions[msg.sender][positionId];
+
         // Check if the position is isolated
         EnumerableMap.AddressToUintMap storage collaterals = positionCollateral[msg.sender][positionId];
         if (assetsModule.getAssetTier(asset) == IASSETS.CollateralTier.ISOLATED && !position.isIsolated) {
@@ -1209,7 +1222,7 @@ contract LendefiCore is
 
         uint256 newTVL = assetTVL[asset] + amount;
         assetTVL[asset] = newTVL;
-        // Update PoR feed
+
         uint256 usdValue = assetsModule.updateAssetPoRFeed(asset, newTVL);
         assetTVLinUSD.set(asset, usdValue);
         emit TVLUpdated(address(asset), newTVL);
@@ -1295,16 +1308,19 @@ contract LendefiCore is
         uint256 expectedDebt,
         uint32 maxSlippageBps
     ) internal activePosition(msg.sender, positionId) validAmount(proposedAmount) returns (uint256 actualAmount) {
+        // Cache debtAmount to avoid multiple SLOADs (used twice)
+        uint256 cachedDebtAmount = position.debtAmount;
+
         // MEV protection: prevent same-block position operations
         if (position.lastInterestAccrual >= block.timestamp) revert MEVSameBlockOperation();
 
-        if (position.debtAmount > 0) {
+        if (cachedDebtAmount > 0) {
             // Calculate current debt with interest
             uint256 balance = calculateDebtWithInterest(msg.sender, positionId);
             _validateSlippage(balance, expectedDebt, maxSlippageBps);
 
-            // Calculate interest accrued
-            uint256 accruedInterest = balance - position.debtAmount;
+            // Calculate interest accrued using cached debt amount
+            uint256 accruedInterest = balance - cachedDebtAmount;
             totalAccruedBorrowerInterest += accruedInterest;
 
             // Determine actual repayment amount (capped at total debt)
