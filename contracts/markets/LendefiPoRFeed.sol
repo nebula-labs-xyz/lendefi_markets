@@ -13,7 +13,6 @@ import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Ini
 contract LendefiPoRFeed is AggregatorV3Interface, Initializable {
     // Core state variables
     address public asset;
-    address public lendefiProtocol;
     address public updater;
     address public owner;
 
@@ -42,16 +41,12 @@ contract LendefiPoRFeed is AggregatorV3Interface, Initializable {
     error InvalidRoundId();
 
     // Constructor is replaced with initializer
-    function initialize(address _asset, address _lendefiProtocol, address _updater, address _owner)
-        public
-        initializer
-    {
-        if (_asset == address(0) || _lendefiProtocol == address(0) || _updater == address(0) || _owner == address(0)) {
+    function initialize(address _asset, address _updater, address _owner) public initializer {
+        if (_asset == address(0) || _updater == address(0) || _owner == address(0)) {
             revert ZeroAddress();
         }
 
         asset = _asset;
-        lendefiProtocol = _lendefiProtocol;
         updater = _updater;
         owner = _owner;
 
