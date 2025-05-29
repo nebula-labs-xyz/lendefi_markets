@@ -126,8 +126,8 @@ contract LendefiView is ILENDEFIVIEW {
     function getProtocolSnapshot() external view returns (ProtocolSnapshot memory) {
         IPROTOCOL.ProtocolConfig memory config = protocol.getConfig();
 
-        // Get flash loan fee from vault
-        uint256 flashLoanFee = marketVault.flashLoanFee();
+        // Get flash loan fee from protocol config
+        uint256 flashLoanFee = protocol.getConfig().flashLoanFee;
 
         return ProtocolSnapshot({
             utilization: marketVault.utilization(),
