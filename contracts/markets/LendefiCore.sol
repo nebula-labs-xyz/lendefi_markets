@@ -1,6 +1,17 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.23;
 /**
+ * ═══════════[ Composable Lending Markets ]═══════════
+ *
+ * ██╗     ███████╗███╗   ██╗██████╗ ███████╗███████╗██╗
+ * ██║     ██╔════╝████╗  ██║██╔══██╗██╔════╝██╔════╝██║
+ * ██║     █████╗  ██╔██╗ ██║██║  ██║█████╗  █████╗  ██║
+ * ██║     ██╔══╝  ██║╚██╗██║██║  ██║██╔══╝  ██╔══╝  ██║
+ * ███████╗███████╗██║ ╚████║██████╔╝███████╗██║     ██║
+ * ╚══════╝╚══════╝╚═╝  ╚═══╝╚═════╝ ╚══════╝╚═╝     ╚═╝
+ *
+ * ═══════════[ Composable Lending Markets ]═══════════
+ *
  * @title Lendefi Protocol Core
  * @notice Core lending protocol focused on collateral management and lending calculations
  * @author alexei@nebula-labs(dot)xyz
@@ -24,6 +35,7 @@ import {IASSETS} from "../interfaces/IASSETS.sol";
 import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 import {LendefiVault} from "./LendefiVault.sol";
 import {ILendefiMarketVault} from "../interfaces/ILendefiMarketVault.sol";
+import {FullMath} from "@uniswap/v4-core/src/libraries/FullMath.sol";
 
 /// @custom:oz-upgrades
 contract LendefiCore is Initializable, AccessControlUpgradeable, ReentrancyGuardUpgradeable, PausableUpgradeable {
@@ -62,7 +74,6 @@ contract LendefiCore is Initializable, AccessControlUpgradeable, ReentrancyGuard
         uint256 rewardInterval; // Duration in seconds
         uint256 rewardableSupply; // Amount of base asset
         uint256 liquidatorThreshold; // Amount of governance tokens
-        uint256 flashLoanFee; // Fee in basis points
     }
 
     struct UserPosition {
@@ -123,7 +134,6 @@ contract LendefiCore is Initializable, AccessControlUpgradeable, ReentrancyGuard
     // ========== STATE VARIABLES ==========
 
     address public govToken;
-    address public vaultFactory;
     address public treasury;
     address public baseAsset;
     address public marketFactory;
@@ -132,7 +142,6 @@ contract LendefiCore is Initializable, AccessControlUpgradeable, ReentrancyGuard
     uint256 public totalBorrow;
     uint256 public totalAccruedBorrowerInterest;
     uint256 public WAD;
-    uint8 public version;
 
     /// @notice Information about the currently pending upgrade
     Market public market;
@@ -151,12 +160,6 @@ contract LendefiCore is Initializable, AccessControlUpgradeable, ReentrancyGuard
     mapping(address => UserPosition[]) internal positions;
     mapping(address => mapping(uint256 => EnumerableMap.AddressToUintMap)) internal positionCollateral;
 
-    /**
-     * @dev Tracks the last time rewards were accrued for each liquidity provider
-     * @dev Key: User address, Value: Timestamp of last accrual
-     */
-    mapping(address src => uint256 time) internal liquidityAccrueTimeIndex;
-
     uint256[10] private __gap;
 
     // ========== EVENTS ==========
@@ -165,24 +168,22 @@ contract LendefiCore is Initializable, AccessControlUpgradeable, ReentrancyGuard
     event WithdrawCollateral(address indexed user, uint256 indexed positionId, address indexed asset, uint256 amount);
     event Borrow(address indexed user, uint256 indexed positionId, uint256 amount);
     event Repay(address indexed user, uint256 indexed positionId, uint256 amount);
-    event FlashLoan(
-        address indexed caller, address indexed receiver, address indexed asset, uint256 amount, uint256 fee
-    );
     event PositionCreated(address indexed user, uint256 indexed positionId, bool isIsolated);
     event VaultCreated(address indexed user, uint256 indexed positionId, address vault);
     event PositionClosed(address indexed user, uint256 indexed positionId);
     event Liquidated(address indexed user, uint256 indexed positionId, address indexed liquidator);
     event InterestAccrued(address indexed user, uint256 indexed positionId, uint256 interest);
-    event SupplyLiquidity(address indexed user, uint256 amount);
-    event WithdrawLiquidity(address indexed user, uint256 shares, uint256 amount);
+    event DepositLiquidity(address indexed user, uint256 amount);
+    event WithdrawLiquidity(address indexed user, uint256 amount);
+    event RedeemShares(address indexed user, uint256 shares, uint256 amount);
+    event MintShares(address indexed user, uint256 shares);
     event ProtocolConfigUpdated(
         uint256 profitTargetRate,
         uint256 borrowRate,
         uint256 rewardAmount,
         uint256 rewardInterval,
         uint256 rewardableSupply,
-        uint256 liquidatorThreshold,
-        uint256 flashLoanFee
+        uint256 liquidatorThreshold
     );
 
     /**
@@ -211,8 +212,6 @@ contract LendefiCore is Initializable, AccessControlUpgradeable, ReentrancyGuard
     error NoDebt();
     error NotEnoughGovernanceTokens();
     error NotLiquidatable();
-    error FlashLoanFailed();
-    error RepaymentFailed();
     error Unauthorized();
     error PoolLiquidityLimitReached();
     error InvalidProfitTarget();
@@ -223,7 +222,7 @@ contract LendefiCore is Initializable, AccessControlUpgradeable, ReentrancyGuard
     error MEVSlippageExceeded();
     error InvalidSupplyAmount();
     error InvalidLiquidatorThreshold();
-    error InvalidFee();
+    error CloneDeploymentFailed();
 
     // ========== MODIFIERS ==========
     modifier validPosition(address user, uint256 positionId) {
@@ -284,14 +283,11 @@ contract LendefiCore is Initializable, AccessControlUpgradeable, ReentrancyGuard
             rewardAmount: 2_000 ether, // 2,000 governance tokens
             rewardInterval: 180 days, // 180 days
             rewardableSupply: 100_000 * WAD, // 100,000 base asset units
-            liquidatorThreshold: 20_000 ether, // 20,000 governance tokens
-            flashLoanFee: 9 // 9 basis points (0.09%)
+            liquidatorThreshold: 20_000 ether // 20,000 governance tokens
         });
 
         // Create vault implementation
         cVault = address(new LendefiVault(address(this)));
-
-        ++version;
     }
 
     /**
@@ -351,7 +347,6 @@ contract LendefiCore is Initializable, AccessControlUpgradeable, ReentrancyGuard
      *   - InvalidInterval: Thrown when interval is below minimum
      *   - InvalidSupplyAmount: Thrown when supply amount is below minimum
      *   - InvalidLiquidatorThreshold: Thrown when liquidator threshold is below minimum
-     *   - InvalidFee: Thrown when flash loan fee exceeds maximum
      */
     function loadProtocolConfig(ProtocolConfig calldata config) external onlyRole(LendefiConstants.MANAGER_ROLE) {
         // Validate all parameters
@@ -361,7 +356,6 @@ contract LendefiCore is Initializable, AccessControlUpgradeable, ReentrancyGuard
         if (config.rewardInterval < 90 days) revert InvalidInterval();
         if (config.rewardableSupply < 20_000 * LendefiConstants.WAD) revert InvalidSupplyAmount();
         if (config.liquidatorThreshold < 10 ether) revert InvalidLiquidatorThreshold();
-        if (config.flashLoanFee > 100 || config.flashLoanFee < 1) revert InvalidFee(); // Maximum 1% (100 basis points)
 
         // Update the mainConfig struct
         mainConfig = config;
@@ -373,8 +367,7 @@ contract LendefiCore is Initializable, AccessControlUpgradeable, ReentrancyGuard
             config.rewardAmount,
             config.rewardInterval,
             config.rewardableSupply,
-            config.liquidatorThreshold,
-            config.flashLoanFee
+            config.liquidatorThreshold
         );
     }
 
@@ -407,9 +400,9 @@ contract LendefiCore is Initializable, AccessControlUpgradeable, ReentrancyGuard
      *   - Deposits the liquidity into the base vault
      *
      * @custom:emits
-     *   - SupplyLiquidity(msg.sender, amount)
+     *   - DepositLiquidity(msg.sender, amount)
      */
-    function supplyLiquidity(uint256 amount, uint256 expectedShares, uint32 maxSlippageBps)
+    function depositLiquidity(uint256 amount, uint256 expectedShares, uint32 maxSlippageBps)
         external
         validAmount(amount)
         validAmount(expectedShares)
@@ -417,37 +410,31 @@ contract LendefiCore is Initializable, AccessControlUpgradeable, ReentrancyGuard
         nonReentrant
         whenNotPaused
     {
-        // MEV protection: prevent same-block operations
-        if (liquidityAccrueTimeIndex[msg.sender] >= block.timestamp) revert MEVSameBlockOperation();
-
         // Transfer tokens from user to this contract
         IERC20(baseAsset).safeTransferFrom(msg.sender, address(this), amount);
 
         // Approve vault to spend tokens
         IERC20(baseAsset).forceApprove(address(baseVault), amount);
 
-        liquidityAccrueTimeIndex[msg.sender] = block.timestamp;
-
-        emit SupplyLiquidity(msg.sender, amount);
+        emit DepositLiquidity(msg.sender, amount);
         uint256 sharesOut = baseVault.deposit(amount, msg.sender);
         _validateSlippage(sharesOut, expectedShares, maxSlippageBps);
     }
 
     /**
-     * @notice Withdraws liquidity from the protocol
-     * @dev This function handles the withdrawal of liquidity from the protocol, which includes:
+     * @notice Mints shares for the LP
+     * @dev This function handles the minting of shares for the user, which includes:
      *      1. Validating the shares amount and expected value
      *      2. Preventing MEV attacks via liquidity accrue time index
-     *      3. Previewing the withdrawal amount
-     *      4. Slippage protection on base asset received
-     *      5. Updating the liquidity accrue time index
-     *      6. Withdrawing from the vault
+     *      3. Slippage protection on base asset received
+     *      4. Updating the liquidity accrue time index
+     *      5. Minting shares from the vault
      *
-     * @param shares Amount of shares to redeem
+     * @param shares Amount of shares to mint
      * @param expectedAmount Expected amount of base asset to receive
      * @param maxSlippageBps Maximum slippage percentage allowed
      */
-    function withdrawLiquidity(uint256 shares, uint256 expectedAmount, uint32 maxSlippageBps)
+    function mintShares(uint256 shares, uint256 expectedAmount, uint32 maxSlippageBps)
         external
         validAmount(shares)
         validAmount(expectedAmount)
@@ -455,21 +442,65 @@ contract LendefiCore is Initializable, AccessControlUpgradeable, ReentrancyGuard
         nonReentrant
         whenNotPaused
     {
-        // MEV protection: prevent same-block operations
-        if (liquidityAccrueTimeIndex[msg.sender] >= block.timestamp) revert MEVSameBlockOperation();
+        // Mint shares from vault - tokens go directly to user
+        uint256 actualAmount = baseVault.mint(shares, msg.sender);
+        _validateSlippage(actualAmount, expectedAmount, maxSlippageBps);
+        emit MintShares(msg.sender, shares);
+    }
 
-        uint256 amountOut = baseVault.previewRedeem(shares);
-        // Slippage protection on base asset received
-        _validateSlippage(amountOut, expectedAmount, maxSlippageBps);
-        liquidityAccrueTimeIndex[msg.sender] = block.timestamp;
-
+    /**
+     * @notice Redeems shares for base asset from the protocol
+     * @dev This function handles the redemption of shares from the protocol, which includes:
+     *      1. Validating the shares amount and expected value
+     *      2. Preventing MEV attacks via liquidity accrue time index
+     *      3. Slippage protection on base asset received
+     *      4. Updating the liquidity accrue time index
+     *      5. Redeeming from the vault
+     *
+     * @param shares Amount of shares to redeem
+     * @param expectedAmount Expected amount of base asset to receive
+     * @param maxSlippageBps Maximum slippage percentage allowed
+     */
+    function redeemLiquidityShares(uint256 shares, uint256 expectedAmount, uint32 maxSlippageBps)
+        external
+        validAmount(shares)
+        validAmount(expectedAmount)
+        validAmount(maxSlippageBps)
+        nonReentrant
+        whenNotPaused
+    {
         // Withdraw from vault - tokens go directly to user
         uint256 actualAmount = baseVault.redeem(shares, msg.sender, msg.sender);
+        // Slippage protection on base asset received
+        _validateSlippage(actualAmount, expectedAmount, maxSlippageBps);
+        emit RedeemShares(msg.sender, shares, actualAmount);
+    }
 
-        // Ensure we got the expected amount
-        if (actualAmount != amountOut) revert MEVSlippageExceeded();
-
-        emit WithdrawLiquidity(msg.sender, shares, actualAmount);
+    /**
+     * @notice Withdraws a specific amount of base asset from the protocol
+     * @dev This function handles the withdrawal of a specific amount of base asset from the protocol, which includes:
+     *      1. Validating the amount and expected shares
+     *      2. Preventing MEV attacks via liquidity accrue time index
+     *      3. Slippage protection on shares burned
+     *      4. Updating the liquidity accrue time index
+     *      5. Withdrawing from the vault
+     *
+     * @param amount Amount of base asset to withdraw
+     * @param expectedShares Expected number of shares to burn
+     * @param maxSlippageBps Maximum slippage percentage allowed
+     */
+    function withdrawLiquidity(uint256 amount, uint256 expectedShares, uint32 maxSlippageBps)
+        external
+        validAmount(amount)
+        validAmount(expectedShares)
+        validAmount(maxSlippageBps)
+        nonReentrant
+        whenNotPaused
+    {
+        // Withdraw from vault - tokens go directly to user
+        uint256 actualShares = baseVault.withdraw(amount, msg.sender, msg.sender);
+        _validateSlippage(actualShares, expectedShares, maxSlippageBps);
+        emit WithdrawLiquidity(msg.sender, amount);
     }
 
     // ========== POSITION MANAGEMENT ==========
@@ -505,7 +536,11 @@ contract LendefiCore is Initializable, AccessControlUpgradeable, ReentrancyGuard
         uint256 positionId = positions[msg.sender].length - 1;
 
         address vault = Clones.clone(cVault);
-        LendefiVault(vault).setOwner(msg.sender);
+        // Verify clone was successful
+        if (vault == address(0)) revert CloneDeploymentFailed();
+        if (vault.code.length == 0) revert CloneDeploymentFailed();
+
+        IVAULT(vault).setOwner(msg.sender);
         newPosition.vault = vault;
         newPosition.isIsolated = isIsolated;
         newPosition.status = PositionStatus.ACTIVE;
@@ -562,7 +597,28 @@ contract LendefiCore is Initializable, AccessControlUpgradeable, ReentrancyGuard
             // Repay to vault
             baseVault.repay(actualAmount, msg.sender);
         }
-        _withdrawAllCollateral(positionId);
+
+        EnumerableMap.AddressToUintMap storage collaterals = positionCollateral[msg.sender][positionId];
+        address vault = positions[msg.sender][positionId].vault;
+
+        // Process all assets before clearing the mapping
+        uint256 length = collaterals.length();
+        for (uint256 i = 0; i < length; i++) {
+            (address asset, uint256 amount) = collaterals.at(i);
+
+            if (amount > 0) {
+                uint256 newTVL = assetTVL[asset] - amount;
+                assetTVL[asset] = newTVL;
+                uint256 usdValue = assetsModule.updateAssetPoRFeed(asset, newTVL);
+                assetTVLinUSD.set(asset, usdValue);
+                emit TVLUpdated(asset, newTVL);
+                emit WithdrawCollateral(msg.sender, positionId, asset, amount);
+                IVAULT(vault).withdrawToken(asset, amount);
+            }
+        }
+
+        // Clear all entries at once
+        collaterals.clear();
         emit PositionClosed(msg.sender, positionId);
     }
 
@@ -973,11 +1029,18 @@ contract LendefiCore is Initializable, AccessControlUpgradeable, ReentrancyGuard
             IASSETS.AssetCalculationParams memory params = assetsModule.getAssetCalculationParams(asset);
             IASSETS.AssetCalculationParams memory paramsBase = assetsModule.getAssetCalculationParams(baseAsset);
 
-            uint256 assetValueInWAD = (amount * params.price * WAD) / (paramsBase.price * (10 ** params.decimals));
+            // Use FullMath.mulDiv for maximum precision without overflow
+            // First calculate the base value conversion
+            uint256 assetValueInWAD =
+                FullMath.mulDiv(amount * params.price, WAD, paramsBase.price * (10 ** params.decimals));
 
             value += assetValueInWAD;
-            credit += (assetValueInWAD * params.borrowThreshold) / 1000;
-            liqLevel += (assetValueInWAD * params.liquidationThreshold) / 1000;
+
+            // Calculate credit with full precision using mulDiv
+            credit += FullMath.mulDiv(assetValueInWAD, params.borrowThreshold, 1000);
+
+            // Calculate liquidation level with full precision using mulDiv
+            liqLevel += FullMath.mulDiv(assetValueInWAD, params.liquidationThreshold, 1000);
         }
     }
 
@@ -1053,14 +1116,6 @@ contract LendefiCore is Initializable, AccessControlUpgradeable, ReentrancyGuard
      */
     function getConfig() public view returns (ProtocolConfig memory) {
         return mainConfig;
-    }
-
-    /**
-     * @notice Returns the utilization ratio of the base vault
-     * @return The utilization ratio as a percentage (0-100)
-     */
-    function getUtilization() public view returns (uint256) {
-        return baseVault.utilization();
     }
 
     /**
@@ -1337,51 +1392,6 @@ contract LendefiCore is Initializable, AccessControlUpgradeable, ReentrancyGuard
             emit Repay(msg.sender, positionId, actualAmount);
             emit InterestAccrued(msg.sender, positionId, accruedInterest);
         }
-    }
-    /**
-     * @notice Withdraws all collateral assets from a position to a specified recipient
-     * @dev Internal function used during position closure and liquidation to remove and transfer
-     *      all collateral assets from a position. Iterates through all assets in the position,
-     *      clears them from the position's storage, and transfers them to the recipient.
-     *
-     * The function handles the complete extraction of all assets regardless of the position's
-     * state or collateralization ratio, and is intended for use only in terminal operations
-     * like complete position closure or liquidation.
-     *
-     * @param positionId ID of the position to withdraw all collateral from
-     *
-     * @custom:state-changes
-     *   - Clears all assets from the position's collateral mapping
-     *   - Updates assetTVL for each asset withdrawn
-     *   - Transfers all assets to the recipient
-     *
-     * @custom:emits
-     *   - WithdrawCollateral(owner, positionId, asset, amount) for each asset
-     *   - TVLUpdated(asset, newTVL) for each asset
-     */
-
-    function _withdrawAllCollateral(uint256 positionId) internal {
-        EnumerableMap.AddressToUintMap storage collaterals = positionCollateral[msg.sender][positionId];
-        address vault = positions[msg.sender][positionId].vault;
-
-        // Process all assets before clearing the mapping
-        uint256 length = collaterals.length();
-        for (uint256 i = 0; i < length; i++) {
-            (address asset, uint256 amount) = collaterals.at(i);
-
-            if (amount > 0) {
-                uint256 newTVL = assetTVL[asset] - amount;
-                assetTVL[asset] = newTVL;
-                uint256 usdValue = assetsModule.updateAssetPoRFeed(asset, newTVL);
-                assetTVLinUSD.set(asset, usdValue);
-                emit TVLUpdated(asset, newTVL);
-                emit WithdrawCollateral(msg.sender, positionId, asset, amount);
-                IVAULT(vault).withdrawToken(asset, amount);
-            }
-        }
-
-        // Clear all entries at once
-        collaterals.clear();
     }
 
     /**
