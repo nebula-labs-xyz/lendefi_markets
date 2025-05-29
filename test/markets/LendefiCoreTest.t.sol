@@ -3,7 +3,7 @@ pragma solidity 0.8.23;
 
 import "../BasicDeploy.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
-import {LendefiVault} from "../../contracts/markets/LendefiVault.sol";
+import {LendefiPositionVault} from "../../contracts/markets/LendefiPositionVault.sol";
 import {MockRWA} from "../../contracts/mock/MockRWA.sol";
 import {RWAPriceConsumerV3} from "../../contracts/mock/RWAOracle.sol";
 import {WETHPriceConsumerV3} from "../../contracts/mock/WETHOracle.sol";
@@ -180,7 +180,7 @@ contract LendefiCoreTest is BasicDeploy {
     function test_Revert_InitializeTwice() public {
         // marketCoreInstance is already initialized via the factory/proxy pattern
         // Trying to initialize it again should revert
-        LendefiVault vaultImpl = new LendefiVault();
+        LendefiPositionVault vaultImpl = new LendefiPositionVault();
 
         vm.expectRevert(); // Expect revert for already initialized
         marketCoreInstance.initialize(
@@ -195,7 +195,7 @@ contract LendefiCoreTest is BasicDeploy {
     function test_Revert_InitializeWithZeroAddress() public {
         // Create a fresh core implementation
         LendefiCore newCoreImpl = new LendefiCore();
-        LendefiVault vaultImpl2 = new LendefiVault();
+        LendefiPositionVault vaultImpl2 = new LendefiPositionVault();
         
         // Create proxy and try to initialize with zero address
         bytes memory initData = abi.encodeWithSelector(
