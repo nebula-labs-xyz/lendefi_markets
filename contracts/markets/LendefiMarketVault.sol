@@ -18,10 +18,8 @@ import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/acce
 import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import {EnumerableMap} from "@openzeppelin/contracts/utils/structs/EnumerableMap.sol";
-import {LendefiRates} from "./lib/LendefiRates.sol";
 import {LendefiConstants} from "./lib/LendefiConstants.sol";
 import {IFlashLoanReceiver} from "../interfaces/IFlashLoanReceiver.sol";
-import {LendefiCore} from "./LendefiCore.sol";
 
 /// @custom:oz-upgrades
 contract LendefiMarketVault is
@@ -33,7 +31,6 @@ contract LendefiMarketVault is
     UUPSUpgradeable
 {
     using SafeERC20 for IERC20;
-    using LendefiRates for *;
     using LendefiConstants for *;
     using EnumerableMap for EnumerableMap.AddressToUintMap;
 
@@ -45,8 +42,15 @@ contract LendefiMarketVault is
     uint256 public totalBase;
     uint256 public totalBorrow;
     uint32 public version;
+    uint32 public flashLoanFee = 9; // Default: 9 basis points (0.09%)
     address public lendefiCore;
     mapping(address => uint256) public borrowerDebt;
+
+    /**
+     * @dev Tracks the last block when operations were performed for each liquidity provider
+     * @dev Key: User address, Value: Block number of last operation
+     */
+    mapping(address => uint256) internal liquidityOperationBlock;
 
     // ========== EVENTS ==========
 
@@ -55,6 +59,7 @@ contract LendefiMarketVault is
     event YieldBoosted(address indexed user, uint256 amount);
     event Exchange(address indexed user, uint256 shares, uint256 amount);
     event FlashLoan(address indexed user, address indexed receiver, address indexed asset, uint256 amount, uint256 fee);
+    event FlashLoanFeeUpdated(uint256 oldFee, uint256 newFee);
 
     // ========== ERRORS ==========
     error ZeroAddress();
@@ -63,6 +68,7 @@ contract LendefiMarketVault is
     error LowLiquidity();
     error FlashLoanFailed();
     error RepaymentFailed();
+    error InvalidFee();
 
     modifier validAmount(uint256 amount) {
         if (amount == 0) revert ZeroAmount();
@@ -125,12 +131,10 @@ contract LendefiMarketVault is
         uint256 initialBalance = baseAssetInstance.balanceOf(address(this));
         if (amount > initialBalance) revert LowLiquidity();
 
-        // Get flash loan fee from core config
-        LendefiCore.ProtocolConfig memory config = LendefiCore(lendefiCore).getConfig();
-
         // Calculate fee and record initial balance
-        uint256 fee = (amount * config.flashLoanFee) / 10000;
+        uint256 fee = (amount * flashLoanFee) / 10000;
         uint256 requiredBalance = initialBalance + fee;
+        totalBase += fee;
 
         // Transfer flash loan amount
         baseAssetInstance.safeTransfer(receiver, amount);
@@ -143,7 +147,6 @@ contract LendefiMarketVault is
 
         uint256 currentBalance = baseAssetInstance.balanceOf(address(this));
         if (currentBalance < requiredBalance) revert RepaymentFailed(); // Repay failed (insufficient funds returned)
-        totalBase += fee;
 
         // Update protocol state only after all verifications succeed
         emit FlashLoan(msg.sender, receiver, address(asset()), amount, fee);
@@ -167,6 +170,18 @@ contract LendefiMarketVault is
     }
 
     /**
+     * @notice Update the flash loan fee
+     * @dev Only callable by manager role
+     * @param newFee The new flash loan fee in basis points (max 100 = 1%)
+     */
+    function setFlashLoanFee(uint32 newFee) external onlyRole(LendefiConstants.MANAGER_ROLE) {
+        if (newFee > 100 || newFee < 1) revert InvalidFee(); // Maximum 1% (100 basis points)
+        uint32 oldFee = flashLoanFee;
+        flashLoanFee = uint32(newFee);
+        emit FlashLoanFeeUpdated(oldFee, newFee);
+    }
+
+    /**
      * @notice Boost yield by adding liquidity
      * @dev Only callable by protocol role (used during liquidations)
      * @param user The user whose liquidation generated the yield
@@ -186,7 +201,6 @@ contract LendefiMarketVault is
 
     /**
      * @notice Deposit base asset into the vault
-     * @dev Only callable by admin
      * @param amount The amount of base asset to deposit
      * @param receiver The address to receive the shares
      * @return The number of shares minted
@@ -200,6 +214,10 @@ contract LendefiMarketVault is
         nonReentrant
         returns (uint256)
     {
+        // MEV protection: prevent same-block operations
+        if (liquidityOperationBlock[receiver] >= block.number) revert MEVSameBlockOperation();
+        liquidityOperationBlock[receiver] = block.number;
+
         uint256 shares = super.deposit(amount, receiver);
         totalBase += amount;
         totalSuppliedLiquidity += amount;
@@ -208,7 +226,6 @@ contract LendefiMarketVault is
 
     /**
      * @notice Mint shares for the vault
-     * @dev Only callable by admin
      * @param shares The number of shares to mint
      * @param receiver The address to receive the shares
      * @return The amount of base asset minted
@@ -222,6 +239,10 @@ contract LendefiMarketVault is
         nonReentrant
         returns (uint256)
     {
+        // MEV protection: prevent same-block operations
+        if (liquidityOperationBlock[receiver] >= block.number) revert MEVSameBlockOperation();
+        liquidityOperationBlock[receiver] = block.number;
+
         uint256 amount = super.mint(shares, receiver);
         totalBase += amount;
         totalSuppliedLiquidity += amount;
@@ -230,7 +251,6 @@ contract LendefiMarketVault is
 
     /**
      * @notice Withdraw base asset from the vault
-     * @dev Only callable by admin
      * @param amount The amount of base asset to withdraw
      * @param receiver The address to receive the base asset
      * @param owner The address of the owner
@@ -246,6 +266,10 @@ contract LendefiMarketVault is
         nonReentrant
         returns (uint256)
     {
+        // MEV protection: prevent same-block operations
+        if (liquidityOperationBlock[owner] >= block.number) revert MEVSameBlockOperation();
+        liquidityOperationBlock[owner] = block.number;
+
         uint256 shares = super.withdraw(amount, receiver, owner);
         totalBase -= amount;
         totalSuppliedLiquidity -= amount;
@@ -254,7 +278,6 @@ contract LendefiMarketVault is
 
     /**
      * @notice Redeem shares for base asset
-     * @dev Only callable by admin
      * @param shares The number of shares to redeem
      * @param receiver The address to receive the base asset
      * @param owner The address of the owner
@@ -270,6 +293,10 @@ contract LendefiMarketVault is
         nonReentrant
         returns (uint256)
     {
+        // MEV protection: prevent same-block operations
+        if (liquidityOperationBlock[owner] >= block.number) revert MEVSameBlockOperation();
+        liquidityOperationBlock[owner] = block.number;
+
         uint256 amount = super.redeem(shares, receiver, owner);
         totalBase -= amount;
         totalSuppliedLiquidity -= amount;
