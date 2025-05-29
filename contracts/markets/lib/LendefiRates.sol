@@ -140,7 +140,7 @@ library LendefiRates {
     ) internal pure returns (uint256) {
         if (totalSuppliedLiquidity == 0) return 0;
 
-        uint256 fee;
+        uint256 fee = 0;
         uint256 target = (totalSupply * baseProfitTarget) / WAD;
         uint256 total = usdcBalance + totalBorrow;
 
