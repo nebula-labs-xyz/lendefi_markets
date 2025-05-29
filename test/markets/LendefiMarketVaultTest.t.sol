@@ -97,7 +97,7 @@ contract LendefiMarketVaultTest is BasicDeploy {
         assertEq(marketVaultInstance.name(), "Lendefi Yield Token");
         assertEq(marketVaultInstance.symbol(), "LYTUSDC");
         assertEq(marketVaultInstance.decimals(), 6);
-        assertEq(marketVaultInstance.WAD(), 1e6);
+        assertEq(marketVaultInstance.baseDecimals(), 1e6);
         assertEq(marketVaultInstance.version(), 1);
         assertTrue(marketVaultInstance.hasRole(keccak256("PROTOCOL_ROLE"), address(marketCoreInstance)));
     }
@@ -105,7 +105,7 @@ contract LendefiMarketVaultTest is BasicDeploy {
     function test_Revert_InitializeTwice() public {
         vm.expectRevert();
         marketVaultInstance.initialize(
-            address(timelockInstance), address(marketCoreInstance), address(usdcInstance), "Test", "TST"
+            address(timelockInstance), address(marketCoreInstance), address(usdcInstance), address(ecoInstance), "Test", "TST"
         );
     }
 
