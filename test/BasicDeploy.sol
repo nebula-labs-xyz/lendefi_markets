@@ -695,7 +695,8 @@ contract BasicDeploy is Test {
                 address(treasuryInstance),
                 address(assetsInstance),
                 address(tokenInstance),
-                address(porFeedImpl)
+                address(porFeedImpl),
+                address(ecoInstance)
             )
         );
         address payable factoryProxy = payable(Upgrades.deployUUPSProxy("LendefiMarketFactory.sol", factoryData));
