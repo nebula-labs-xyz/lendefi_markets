@@ -166,8 +166,6 @@ contract BasicDeployTest is BasicDeploy {
 
         // Check core contract initialization
         assertEq(address(marketCoreInstance.baseAsset()), address(usdcInstance), "Core base asset should be USDC");
-        assertEq(address(marketCoreInstance.baseVault()), address(marketVaultInstance), "Core vault should match");
-        // assertEq(marketCoreInstance.version(), 1, "Core version should be 1");
 
         // Check vault contract initialization
         assertEq(marketVaultInstance.asset(), address(usdcInstance), "Vault asset should be USDC");
@@ -213,7 +211,6 @@ contract BasicDeployTest is BasicDeploy {
         // Check Core's view of vault
         console2.log("\n=== Core state ===");
         console2.log("Core address:", address(marketCoreInstance));
-        console2.log("Core's baseVault:", address(marketCoreInstance.baseVault()));
         console2.log("Core's baseAsset:", address(marketCoreInstance.baseAsset()));
 
         console2.log("\n=== Calling supplyLiquidity ===");
