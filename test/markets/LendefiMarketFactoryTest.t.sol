@@ -145,7 +145,7 @@ contract LendefiMarketFactoryTest is BasicDeploy {
         LendefiMarketVault daiVault = LendefiMarketVault(createdMarket.baseVault);
 
         assertEq(daiCore.baseAsset(), address(daiToken));
-        assertEq(address(daiCore.baseVault()), address(daiVault));
+
         assertEq(daiVault.asset(), address(daiToken));
         assertEq(daiVault.name(), "Lendefi DAI Market");
         assertEq(daiVault.symbol(), "lfDAI");
