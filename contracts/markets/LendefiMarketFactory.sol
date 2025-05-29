@@ -1,6 +1,16 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.23;
 /**
+ * ═══════════[ Composable Lending Markets ]═══════════
+ *
+ * ██╗     ███████╗███╗   ██╗██████╗ ███████╗███████╗██╗
+ * ██║     ██╔════╝████╗  ██║██╔══██╗██╔════╝██╔════╝██║
+ * ██║     █████╗  ██╔██╗ ██║██║  ██║█████╗  █████╗  ██║
+ * ██║     ██╔══╝  ██║╚██╗██║██║  ██║██╔══╝  ██╔══╝  ██║
+ * ███████╗███████╗██║ ╚████║██████╔╝███████╗██║     ██║
+ * ╚══════╝╚══════╝╚═╝  ╚═══╝╚═════╝ ╚══════╝╚═╝     ╚═╝
+ *
+ * ═══════════[ Composable Lending Markets ]═══════════
  * @title Lendefi Market Factory
  * @author alexei@nebula-labs(dot)xyz
  * @notice Factory for creating LendefiCore + ERC4626baseVault pairs for different base assets
@@ -50,7 +60,11 @@ contract LendefiMarketFactory is Initializable, AccessControlUpgradeable, UUPSUp
     );
     event MarketUpdated(address indexed baseAsset, IPROTOCOL.Market marketInfo);
     event MarketRemoved(address indexed baseAsset);
-    event ImplementationsSet(address indexed coreImplementation, address indexed vaultImplementation, address indexed positionVaultImplementation);
+    event ImplementationsSet(
+        address indexed coreImplementation,
+        address indexed vaultImplementation,
+        address indexed positionVaultImplementation
+    );
 
     // ========== ERRORS ==========
     error MarketAlreadyExists();
@@ -94,11 +108,15 @@ contract LendefiMarketFactory is Initializable, AccessControlUpgradeable, UUPSUp
     }
 
     // // ========== ADMIN FUNCTIONS ==========
-    function setImplementations(address _coreImplementation, address _vaultImplementation, address _positionVaultImplementation)
-        external
-        onlyRole(DEFAULT_ADMIN_ROLE)
-    {
-        if (_coreImplementation == address(0) || _vaultImplementation == address(0) || _positionVaultImplementation == address(0)) revert ZeroAddress();
+    function setImplementations(
+        address _coreImplementation,
+        address _vaultImplementation,
+        address _positionVaultImplementation
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (
+            _coreImplementation == address(0) || _vaultImplementation == address(0)
+                || _positionVaultImplementation == address(0)
+        ) revert ZeroAddress();
         coreImplementation = _coreImplementation;
         vaultImplementation = _vaultImplementation;
         positionVaultImplementation = _positionVaultImplementation;
