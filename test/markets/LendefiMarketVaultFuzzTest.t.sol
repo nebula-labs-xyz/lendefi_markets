@@ -313,7 +313,7 @@ contract LendefiMarketVaultFuzzTest is BasicDeploy {
             vm.stopPrank();
 
             totalDeposited += deposits[i];
-            
+
             // Roll to next block for MEV protection
             if (i < numDepositors - 1) {
                 vm.roll(block.number + 1);
@@ -344,7 +344,7 @@ contract LendefiMarketVaultFuzzTest is BasicDeploy {
         for (uint256 i = 0; i < numDepositors; i++) {
             // Roll to next block for MEV protection
             vm.roll(block.number + 1);
-            
+
             uint256 shares = marketVaultInstance.balanceOf(depositors[i]);
             if (shares > 0) {
                 uint256 maxWithdraw = marketVaultInstance.maxWithdraw(depositors[i]);
