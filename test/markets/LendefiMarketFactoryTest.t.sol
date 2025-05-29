@@ -62,7 +62,8 @@ contract LendefiMarketFactoryTest is BasicDeploy {
             address(treasuryInstance),
             address(assetsInstance),
             address(tokenInstance),
-            address(0)
+            address(0),
+            address(ecoInstance)
         );
     }
 
@@ -72,7 +73,7 @@ contract LendefiMarketFactoryTest is BasicDeploy {
         // The factory uses InvalidInitialization when admin is zero
         vm.expectRevert();
         newFactory.initialize(
-            address(0), address(treasuryInstance), address(assetsInstance), address(tokenInstance), address(0)
+            address(0), address(treasuryInstance), address(assetsInstance), address(tokenInstance), address(0), address(ecoInstance)
         );
     }
 
@@ -148,7 +149,7 @@ contract LendefiMarketFactoryTest is BasicDeploy {
         LendefiCore usdtCore = LendefiCore(createdMarket.core);
 
         // Verify WAD is correctly set for 6 decimal token
-        assertEq(usdtCore.WAD(), 1e6);
+        assertEq(usdtCore.baseDecimals(), 1e6);
     }
 
     function test_Revert_CreateMarket_Duplicate() public {
