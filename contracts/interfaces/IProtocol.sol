@@ -52,6 +52,7 @@ interface IPROTOCOL {
         uint256 rewardInterval; // Reward interval in blocks
         uint256 rewardableSupply; // Minimum rewardable supply
         uint256 liquidatorThreshold; // Minimum liquidator token threshold
+        uint32 flashLoanFee; // Flash loan fee in basis points (max 100 = 1%)
     }
 
     /**
@@ -334,6 +335,9 @@ interface IPROTOCOL {
 
     /// @notice Thrown when clone deployment fails
     error CloneDeploymentFailed();
+
+    /// @notice Thrown when fee is invalid
+    error InvalidFee();
 
     // ========== INITIALIZATION FUNCTIONS ==========
 
