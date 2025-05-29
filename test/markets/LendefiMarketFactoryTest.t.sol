@@ -8,6 +8,7 @@ import {TokenMock} from "../../contracts/mock/TokenMock.sol";
 import {LendefiCore} from "../../contracts/markets/LendefiCore.sol";
 import {LendefiMarketVault} from "../../contracts/markets/LendefiMarketVault.sol";
 import {LendefiMarketFactory} from "../../contracts/markets/LendefiMarketFactory.sol";
+import {LendefiPositionVault} from "../../contracts/markets/LendefiPositionVault.sol";
 import {WETH9} from "../../contracts/vendor/canonical-weth/contracts/WETH9.sol";
 import {WETHPriceConsumerV3} from "../../contracts/mock/WETHOracle.sol";
 
@@ -82,7 +83,7 @@ contract LendefiMarketFactoryTest is BasicDeploy {
     function test_SetImplementations() public {
         LendefiCore newCoreImpl = new LendefiCore();
         LendefiMarketVault newVaultImpl = new LendefiMarketVault();
-        LendefiVault posVaultImpl = new LendefiVault();
+        LendefiPositionVault posVaultImpl = new LendefiPositionVault();
 
         vm.expectEmit(true, true, true, true);
         emit LendefiMarketFactory.ImplementationsSet(address(newCoreImpl), address(newVaultImpl), address(posVaultImpl));
@@ -98,7 +99,7 @@ contract LendefiMarketFactoryTest is BasicDeploy {
     function test_Revert_SetImplementations_Unauthorized() public {
         LendefiCore newCoreImpl = new LendefiCore();
 
-        LendefiVault posVaultImpl = new LendefiVault();
+        LendefiPositionVault posVaultImpl = new LendefiPositionVault();
         
         vm.prank(alice);
         vm.expectRevert(
