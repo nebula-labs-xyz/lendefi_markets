@@ -1,6 +1,16 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.23;
 /**
+ * ═══════════[ Composable Lending Markets ]═══════════
+ *
+ * ██╗     ███████╗███╗   ██╗██████╗ ███████╗███████╗██╗
+ * ██║     ██╔════╝████╗  ██║██╔══██╗██╔════╝██╔════╝██║
+ * ██║     █████╗  ██╔██╗ ██║██║  ██║█████╗  █████╗  ██║
+ * ██║     ██╔══╝  ██║╚██╗██║██║  ██║██╔══╝  ██╔══╝  ██║
+ * ███████╗███████╗██║ ╚████║██████╔╝███████╗██║     ██║
+ * ╚══════╝╚══════╝╚═╝  ╚═══╝╚═════╝ ╚══════╝╚═╝     ╚═╝
+ *
+ * ═══════════[ Composable Lending Markets ]═══════════
  * @title LendefiMarketVault
  * @author alexei@nebula-labs(dot)xyz
  * @notice ERC-4626 compliant wrapper for the LendefiCore protocol
