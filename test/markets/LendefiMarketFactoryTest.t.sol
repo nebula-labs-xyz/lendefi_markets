@@ -74,7 +74,12 @@ contract LendefiMarketFactoryTest is BasicDeploy {
         // The factory uses InvalidInitialization when admin is zero
         vm.expectRevert();
         newFactory.initialize(
-            address(0), address(treasuryInstance), address(assetsInstance), address(tokenInstance), address(0), address(ecoInstance)
+            address(0),
+            address(treasuryInstance),
+            address(assetsInstance),
+            address(tokenInstance),
+            address(0),
+            address(ecoInstance)
         );
     }
 
@@ -87,7 +92,7 @@ contract LendefiMarketFactoryTest is BasicDeploy {
 
         vm.expectEmit(true, true, true, true);
         emit LendefiMarketFactory.ImplementationsSet(address(newCoreImpl), address(newVaultImpl), address(posVaultImpl));
-        
+
         vm.prank(address(timelockInstance));
         marketFactoryInstance.setImplementations(address(newCoreImpl), address(newVaultImpl), address(posVaultImpl));
 
@@ -100,7 +105,7 @@ contract LendefiMarketFactoryTest is BasicDeploy {
         LendefiCore newCoreImpl = new LendefiCore();
 
         LendefiPositionVault posVaultImpl = new LendefiPositionVault();
-        
+
         vm.prank(alice);
         vm.expectRevert(
             abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, alice, DEFAULT_ADMIN_ROLE)
