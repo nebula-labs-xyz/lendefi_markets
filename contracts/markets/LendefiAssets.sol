@@ -1,6 +1,16 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.23;
 /**
+ * ═══════════[ Composable Lending Markets ]═══════════
+ *
+ * ██╗     ███████╗███╗   ██╗██████╗ ███████╗███████╗██╗
+ * ██║     ██╔════╝████╗  ██║██╔══██╗██╔════╝██╔════╝██║
+ * ██║     █████╗  ██╔██╗ ██║██║  ██║█████╗  █████╗  ██║
+ * ██║     ██╔══╝  ██║╚██╗██║██║  ██║██╔══╝  ██╔══╝  ██║
+ * ███████╗███████╗██║ ╚████║██████╔╝███████╗██║     ██║
+ * ╚══════╝╚══════╝╚═╝  ╚═══╝╚═════╝ ╚══════╝╚═╝     ╚═╝
+ *
+ * ═══════════[ Composable Lending Markets ]═══════════
  * @title LendefiAssets
  * @author alexei@nebula-labs(dot)xyz
  * @notice Manages asset configurations, listings, and oracle integrations
