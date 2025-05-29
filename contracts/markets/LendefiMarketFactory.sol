@@ -170,7 +170,7 @@ contract LendefiMarketFactory is Initializable, AccessControlUpgradeable, UUPSUp
         if (porFeedClone.code.length == 0) revert CloneDeploymentFailed();
 
         //function initialize(address _asset, address _lendefiProtocol, address _updater, address _owner)
-        IPoRFeed(porFeedClone).initialize(baseAsset, address(coreInstance), timelock, timelock);
+        IPoRFeed(porFeedClone).initialize(baseAsset, timelock, timelock);
 
         // Update market info with created addresses
 
