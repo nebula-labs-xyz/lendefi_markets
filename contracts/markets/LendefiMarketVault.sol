@@ -20,6 +20,8 @@ import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/Pau
 import {EnumerableMap} from "@openzeppelin/contracts/utils/structs/EnumerableMap.sol";
 import {LendefiConstants} from "./lib/LendefiConstants.sol";
 import {IFlashLoanReceiver} from "../interfaces/IFlashLoanReceiver.sol";
+import {IPROTOCOL} from "../interfaces/IProtocol.sol";
+import {IECOSYSTEM} from "../interfaces/IEcosystem.sol";
 
 /// @custom:oz-upgrades
 contract LendefiMarketVault is
@@ -36,7 +38,7 @@ contract LendefiMarketVault is
 
     // ========== STATE VARIABLES ==========
 
-    uint256 public WAD;
+    uint256 public baseDecimals;
     uint256 public totalSuppliedLiquidity;
     uint256 public totalAccruedInterest;
     uint256 public totalBase;
@@ -44,6 +46,7 @@ contract LendefiMarketVault is
     uint32 public version;
     uint32 public flashLoanFee = 9; // Default: 9 basis points (0.09%)
     address public lendefiCore;
+    address public ecosystem;
     mapping(address => uint256) public borrowerDebt;
 
     /**
@@ -60,6 +63,7 @@ contract LendefiMarketVault is
     event Exchange(address indexed user, uint256 shares, uint256 amount);
     event FlashLoan(address indexed user, address indexed receiver, address indexed asset, uint256 amount, uint256 fee);
     event FlashLoanFeeUpdated(uint256 oldFee, uint256 newFee);
+    event Reward(address indexed user, uint256 amount);
 
     // ========== ERRORS ==========
     error ZeroAddress();
@@ -87,16 +91,22 @@ contract LendefiMarketVault is
     }
     // ========== INITIALIZATION ==========
 
-    function initialize(address timelock, address core, address baseAsset, string memory name, string memory symbol)
-        external
-        initializer
-    {
+    function initialize(
+        address timelock,
+        address core,
+        address baseAsset,
+        address _ecosystem,
+        string memory name,
+        string memory symbol
+    ) external initializer {
         if (baseAsset == address(0)) revert ZeroAddress();
         if (timelock == address(0)) revert ZeroAddress();
         if (core == address(0)) revert ZeroAddress();
+        if (_ecosystem == address(0)) revert ZeroAddress();
 
-        WAD = 10 ** IERC20Metadata(baseAsset).decimals();
+        baseDecimals = 10 ** IERC20Metadata(baseAsset).decimals();
         lendefiCore = core;
+        ecosystem = _ecosystem;
         version = 1;
 
         __ERC4626_init(IERC20(baseAsset));
@@ -181,6 +191,7 @@ contract LendefiMarketVault is
         emit FlashLoanFeeUpdated(oldFee, newFee);
     }
 
+
     /**
      * @notice Boost yield by adding liquidity
      * @dev Only callable by protocol role (used during liquidations)
@@ -197,6 +208,44 @@ contract LendefiMarketVault is
         totalAccruedInterest += amount;
         emit YieldBoosted(user, amount);
         IERC20(asset()).safeTransferFrom(msg.sender, address(this), amount);
+    }
+
+    /**
+     * @notice Claims accumulated rewards for eligible liquidity providers
+     * @dev Calculates time-based rewards and transfers them to the caller if eligible
+     * @return finalReward amount
+     * @custom:requirements
+     *   - Caller must have sufficient time since last claim (>= rewardInterval)
+     *   - Caller must have supplied minimum amount (>= rewardableSupply)
+     *
+     * @custom:state-changes
+     *   - Resets liquidityOperationBlock[msg.sender] if rewards are claimed
+     *
+     * @custom:emits
+     *   - Reward(msg.sender, rewardAmount) if rewards are issued
+     *
+     * @custom:access-control Available to any caller when protocol is not paused
+     */
+    function claimReward() external nonReentrant whenNotPaused returns (uint256 finalReward) {
+        if (isRewardable(msg.sender)) {
+            // Get config from core
+            IPROTOCOL.ProtocolConfig memory config = IPROTOCOL(lendefiCore).getConfig();
+
+            // Calculate reward amount based on blocks elapsed
+            uint256 blocksElapsed = block.number - liquidityOperationBlock[msg.sender];
+            uint256 reward = (config.rewardAmount * blocksElapsed) / config.rewardInterval;
+
+            // Apply maximum reward cap
+            uint256 maxReward = IECOSYSTEM(ecosystem).maxReward();
+            finalReward = reward > maxReward ? maxReward : reward;
+
+            // Reset block number for next reward period
+            liquidityOperationBlock[msg.sender] = block.number;
+
+            // Emit event and issue reward
+            emit Reward(msg.sender, finalReward);
+            IECOSYSTEM(ecosystem).reward(msg.sender, finalReward);
+        }
     }
 
     /**
@@ -355,11 +404,30 @@ contract LendefiMarketVault is
 
     /**
      * @notice Calculates the current protocol utilization rate
-     * @dev Utilization = totalBorrow / totalSuppliedLiquidity, in WAD format
+     * @dev Utilization = totalBorrow / totalSuppliedLiquidity, in baseDecimals format
      * @return u The protocol's current utilization rate (0-1e6)
      */
     function utilization() public view returns (uint256 u) {
-        (totalSuppliedLiquidity == 0 || totalBorrow == 0) ? u = 0 : u = (WAD * totalBorrow) / totalSuppliedLiquidity;
+        (totalSuppliedLiquidity == 0 || totalBorrow == 0)
+            ? u = 0
+            : u = (baseDecimals * totalBorrow) / totalSuppliedLiquidity;
+    }
+
+    /**
+     * @notice Determines if a user is eligible for liquidity provider rewards
+     * @dev Checks if the required time has passed and minimum supply amount is met
+     * @param user Address of the user to check for reward eligibility
+     * @return True if the user is eligible for rewards, false otherwise
+     */
+    function isRewardable(address user) public view returns (bool) {
+        uint256 lastBlock = liquidityOperationBlock[user];
+        if (lastBlock == 0) return false; // Never had liquidity operation
+        
+        IPROTOCOL.ProtocolConfig memory config = IPROTOCOL(lendefiCore).getConfig();
+        if (config.rewardAmount == 0) return false; // Rewards disabled
+        
+        uint256 baseAmount = balanceOf(user) > 0 ? (balanceOf(user) * totalSuppliedLiquidity) / totalSupply() : 0;
+        return block.number - lastBlock >= config.rewardInterval && baseAmount >= config.rewardableSupply;
     }
 
     /**
@@ -367,5 +435,7 @@ contract LendefiMarketVault is
      * @dev Only callable by admin
      * @param newImplementation The address of the new implementation
      */
-    function _authorizeUpgrade(address newImplementation) internal override onlyRole(LendefiConstants.UPGRADER_ROLE) {}
+    function _authorizeUpgrade(address newImplementation) internal override onlyRole(LendefiConstants.UPGRADER_ROLE) {
+        version++;
+    }
 }
