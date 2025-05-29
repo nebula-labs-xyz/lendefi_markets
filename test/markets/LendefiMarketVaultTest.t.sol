@@ -9,6 +9,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {WETH9} from "../../contracts/vendor/canonical-weth/contracts/WETH9.sol";
 import {WETHPriceConsumerV3} from "../../contracts/mock/WETHOracle.sol";
 import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
+import {IPROTOCOL} from "../../contracts/interfaces/IProtocol.sol";
 
 contract LendefiMarketVaultTest is BasicDeploy {
     MockFlashLoanReceiver flashReceiver;
@@ -283,8 +284,8 @@ contract LendefiMarketVaultTest is BasicDeploy {
         uint256 loanAmount = 50_000e6;
         bytes memory params = "";
 
-        // Get expected fee from core
-        uint32 fee = marketVaultInstance.flashLoanFee();
+        // Get expected fee from protocol config
+        (, , , , , , uint32 fee) = marketVaultInstance.protocolConfig();
         uint256 expectedFee = (loanAmount * fee) / 10000;
 
         uint256 vaultBalanceBefore = usdcInstance.balanceOf(address(marketVaultInstance));
@@ -310,9 +311,12 @@ contract LendefiMarketVaultTest is BasicDeploy {
     }
 
     function test_Revert_FlashLoan_InsufficientRepayment() public {
-        // First set flash loan fee to ensure non-zero fee
-        vm.prank(address(timelockInstance));
-        marketVaultInstance.setFlashLoanFee(9); // 0.09% fee
+        // Since protocolConfig might not be properly initialized during factory deployment,
+        // we need to set it manually
+        IPROTOCOL.ProtocolConfig memory config = marketCoreInstance.getConfig();
+        
+        vm.prank(address(marketCoreInstance));
+        marketVaultInstance.setProtocolConfig(config);
 
         flashReceiver.setShouldReturnLessFunds(true);
 
