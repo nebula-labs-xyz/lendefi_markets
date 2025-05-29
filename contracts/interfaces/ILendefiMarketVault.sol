@@ -15,7 +15,7 @@ interface ILendefiMarketVault is IERC4626 {
     event Reward(address indexed user, uint256 amount);
 
     // ========== ERRORS ==========
-    
+
     error ZeroAddress();
     error MEVSameBlockOperation();
     error ZeroAmount();
