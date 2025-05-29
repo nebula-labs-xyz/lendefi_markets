@@ -137,7 +137,7 @@ contract BasicDeployTest is BasicDeploy {
         assertTrue(address(marketVaultInstance) != address(0), "Market vault should be deployed");
 
         // Check market info
-        LendefiCore.Market memory marketInfo = marketFactoryInstance.getMarketInfo(address(usdcInstance));
+        IPROTOCOL.Market memory marketInfo = marketFactoryInstance.getMarketInfo(address(usdcInstance));
         assertEq(marketInfo.baseAsset, address(usdcInstance), "Base asset should be USDC");
         assertEq(marketInfo.core, address(marketCoreInstance), "Core should match");
         assertEq(marketInfo.baseVault, address(marketVaultInstance), "Vault should match");
