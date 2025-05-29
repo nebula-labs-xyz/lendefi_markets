@@ -196,7 +196,7 @@ contract LendefiCoreTest is BasicDeploy {
         // Create a fresh core implementation
         LendefiCore newCoreImpl = new LendefiCore();
         LendefiPositionVault vaultImpl2 = new LendefiPositionVault();
-        
+
         // Create proxy and try to initialize with zero address
         bytes memory initData = abi.encodeWithSelector(
             LendefiCore.initialize.selector,
@@ -206,7 +206,7 @@ contract LendefiCoreTest is BasicDeploy {
             address(treasuryInstance),
             address(vaultImpl2)
         );
-        
+
         vm.expectRevert(); // Expect revert for zero address
         new ERC1967Proxy(address(newCoreImpl), initData);
     }
