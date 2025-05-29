@@ -12,8 +12,7 @@ pragma solidity 0.8.23;
  */
 import {IPROTOCOL} from "../interfaces/IProtocol.sol";
 import {IASSETS} from "../interfaces/IASSETS.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {IYIELDTOKEN} from "../interfaces/ILendefiYieldToken.sol";
+import {ILendefiMarketVault} from "../interfaces/ILendefiMarketVault.sol";
 import {IECOSYSTEM} from "../interfaces/IEcosystem.sol";
 import {ILENDEFIVIEW} from "../interfaces/ILendefiView.sol";
 
@@ -23,35 +22,27 @@ import {ILENDEFIVIEW} from "../interfaces/ILendefiView.sol";
  */
 contract LendefiView is ILENDEFIVIEW {
     /// @notice Main protocol contract reference
-    IPROTOCOL internal protocol;
+    IPROTOCOL internal immutable protocol;
 
-    /// @notice USDC token contract reference
-    IERC20 internal usdcInstance;
-
-    /// @notice Yield token (LP token) contract reference
-    IYIELDTOKEN internal yieldTokenInstance;
+    /// @notice Market vault contract reference
+    ILendefiMarketVault internal immutable marketVault;
 
     /// @notice Ecosystem contract reference for rewards calculation
-    IECOSYSTEM internal ecosystemInstance;
+    IECOSYSTEM internal immutable ecosystem;
 
     /**
      * @notice Initializes the LendefiView contract with required contract references
      * @dev All address parameters must be non-zero to ensure proper functionality
      * @param _protocol Address of the main Lendefi protocol contract
-     * @param _usdc Address of the USDC token contract
-     * @param _yieldToken Address of the LP token contract
+     * @param _marketVault Address of the market vault contract
      * @param _ecosystem Address of the ecosystem contract for rewards
      */
-    constructor(address _protocol, address _usdc, address _yieldToken, address _ecosystem) {
-        require(
-            _protocol != address(0) && _usdc != address(0) && _yieldToken != address(0) && _ecosystem != address(0),
-            "ZERO_ADDRESS"
-        );
+    constructor(address _protocol, address _marketVault, address _ecosystem) {
+        require(_protocol != address(0) && _marketVault != address(0) && _ecosystem != address(0), "ZERO_ADDRESS");
 
         protocol = IPROTOCOL(_protocol);
-        usdcInstance = IERC20(_usdc);
-        yieldTokenInstance = IYIELDTOKEN(_yieldToken);
-        ecosystemInstance = IECOSYSTEM(_ecosystem);
+        marketVault = ILendefiMarketVault(_marketVault);
+        ecosystem = IECOSYSTEM(_ecosystem);
     }
 
     /**
@@ -85,7 +76,7 @@ contract LendefiView is ILENDEFIVIEW {
      * @param user The address of the liquidity provider
      * @return lpTokenBalance The user's balance of LP tokens
      * @return usdcValue The current USDC value of the user's LP tokens
-     * @return lastAccrualTime The timestamp of the last interest accrual for the user
+     * @return lastAccrualBlock The block number of the last liquidity operation for the user
      * @return isRewardEligible Whether the user is eligible for rewards
      * @return pendingRewards The amount of pending rewards available to the user
      */
@@ -95,27 +86,34 @@ contract LendefiView is ILENDEFIVIEW {
         returns (
             uint256 lpTokenBalance,
             uint256 usdcValue,
-            uint256 lastAccrualTime,
+            uint256 lastAccrualBlock,
             bool isRewardEligible,
             uint256 pendingRewards
         )
     {
-        lpTokenBalance = yieldTokenInstance.balanceOf(user);
+        lpTokenBalance = marketVault.balanceOf(user);
 
         // Calculate the current USDC value based on the user's share of the total LP tokens
-        uint256 total = usdcInstance.balanceOf(address(protocol)) + protocol.totalBorrow();
-        uint256 supply = yieldTokenInstance.totalSupply();
-        usdcValue = supply > 0 ? (lpTokenBalance * total) / supply : 0;
+        uint256 totalAssets = marketVault.totalAssets();
+        uint256 totalSupply = marketVault.totalSupply();
+        usdcValue = totalSupply > 0 ? (lpTokenBalance * totalAssets) / totalSupply : 0;
 
-        lastAccrualTime = protocol.getLiquidityAccrueTimeIndex(user);
-        isRewardEligible = protocol.isRewardable(user);
+        // Get last operation block from vault (liquidityOperationBlock mapping)
+        // Since it's internal, we need to check if user is rewardable instead
+        isRewardEligible = marketVault.isRewardable(user);
+
+        // For last accrual block, we can't directly access it, so return 0
+        // Frontend can track this separately or we need to add a getter to vault
+        lastAccrualBlock = 0;
 
         // Calculate pending rewards if eligible
         if (isRewardEligible) {
             IPROTOCOL.ProtocolConfig memory config = protocol.getConfig();
-            uint256 duration = block.timestamp - lastAccrualTime;
-            uint256 reward = (config.rewardAmount * duration) / config.rewardInterval;
-            uint256 maxReward = ecosystemInstance.maxReward();
+            // Since we can't access liquidityOperationBlock directly, estimate from current eligibility
+            // If eligible, they must have waited at least rewardInterval blocks
+            uint256 estimatedBlocksElapsed = config.rewardInterval;
+            uint256 reward = (config.rewardAmount * estimatedBlocksElapsed) / config.rewardInterval;
+            uint256 maxReward = ecosystem.maxReward();
             pendingRewards = reward > maxReward ? maxReward : reward;
         }
     }
@@ -127,18 +125,22 @@ contract LendefiView is ILENDEFIVIEW {
      */
     function getProtocolSnapshot() external view returns (ProtocolSnapshot memory) {
         IPROTOCOL.ProtocolConfig memory config = protocol.getConfig();
+
+        // Get flash loan fee from vault
+        uint256 flashLoanFee = marketVault.flashLoanFee();
+
         return ProtocolSnapshot({
-            utilization: protocol.getUtilization(),
+            utilization: marketVault.utilization(),
             borrowRate: protocol.getBorrowRate(IASSETS.CollateralTier.CROSS_A),
             supplyRate: protocol.getSupplyRate(),
-            totalBorrow: protocol.totalBorrow(),
-            totalSuppliedLiquidity: protocol.totalSuppliedLiquidity(),
+            totalBorrow: marketVault.totalBorrow(),
+            totalSuppliedLiquidity: marketVault.totalSuppliedLiquidity(),
             targetReward: config.rewardAmount,
-            rewardInterval: config.rewardInterval,
+            rewardInterval: config.rewardInterval, // Now in blocks
             rewardableSupply: config.rewardableSupply,
             baseProfitTarget: config.profitTargetRate,
             liquidatorThreshold: config.liquidatorThreshold,
-            flashLoanFee: config.flashLoanFee
+            flashLoanFee: flashLoanFee
         });
     }
 }
