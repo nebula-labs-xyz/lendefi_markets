@@ -5,7 +5,6 @@ import "../BasicDeploy.sol";
 import {MockFlashLoanReceiver} from "../../contracts/mock/MockFlashLoanReceiver.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 import {LendefiMarketVault} from "../../contracts/markets/LendefiMarketVault.sol";
-import {LendefiCore} from "../../contracts/markets/LendefiCore.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {WETH9} from "../../contracts/vendor/canonical-weth/contracts/WETH9.sol";
 import {WETHPriceConsumerV3} from "../../contracts/mock/WETHOracle.sol";
@@ -37,7 +36,7 @@ contract LendefiMarketVaultTest is BasicDeploy {
         deal(address(usdcInstance), alice, 1_000_000e6);
         vm.startPrank(alice);
         usdcInstance.approve(address(marketCoreInstance), 1_000_000e6);
-        marketCoreInstance.supplyLiquidity(1_000_000e6, marketVaultInstance.previewDeposit(1_000_000e6), 100);
+        marketCoreInstance.depositLiquidity(1_000_000e6, marketVaultInstance.previewDeposit(1_000_000e6), 100);
         vm.stopPrank();
 
         // Deploy and setup WETH for integration tests
@@ -156,6 +155,9 @@ contract LendefiMarketVaultTest is BasicDeploy {
         usdcInstance.approve(address(marketVaultInstance), depositAmount);
         uint256 shares = marketVaultInstance.deposit(depositAmount, charlie);
 
+        // Move to next block for MEV protection
+        vm.roll(block.number + 1);
+
         // Then withdraw half
         uint256 withdrawAmount = depositAmount / 2;
         uint256 expectedShares = marketVaultInstance.previewWithdraw(withdrawAmount);
@@ -176,6 +178,9 @@ contract LendefiMarketVaultTest is BasicDeploy {
         vm.startPrank(charlie);
         usdcInstance.approve(address(marketVaultInstance), depositAmount);
         uint256 shares = marketVaultInstance.deposit(depositAmount, charlie);
+
+        // Move to next block for MEV protection
+        vm.roll(block.number + 1);
 
         // Redeem half shares
         uint256 redeemShares = shares / 2;
@@ -279,8 +284,8 @@ contract LendefiMarketVaultTest is BasicDeploy {
         bytes memory params = "";
 
         // Get expected fee from core
-        LendefiCore.ProtocolConfig memory config = marketCoreInstance.getConfig();
-        uint256 expectedFee = (loanAmount * config.flashLoanFee) / 10000;
+        uint32 fee = marketVaultInstance.flashLoanFee();
+        uint256 expectedFee = (loanAmount * fee) / 10000;
 
         uint256 vaultBalanceBefore = usdcInstance.balanceOf(address(marketVaultInstance));
         uint256 receiverBalanceBefore = usdcInstance.balanceOf(address(flashReceiver));
@@ -305,6 +310,10 @@ contract LendefiMarketVaultTest is BasicDeploy {
     }
 
     function test_Revert_FlashLoan_InsufficientRepayment() public {
+        // First set flash loan fee to ensure non-zero fee
+        vm.prank(address(timelockInstance));
+        marketVaultInstance.setFlashLoanFee(9); // 0.09% fee
+
         flashReceiver.setShouldReturnLessFunds(true);
 
         vm.expectRevert(LendefiMarketVault.RepaymentFailed.selector);
@@ -427,7 +436,7 @@ contract LendefiMarketVaultTest is BasicDeploy {
         vm.startPrank(charlie);
         usdcInstance.approve(address(marketCoreInstance), supplyAmount);
         uint256 expectedShares = marketVaultInstance.previewDeposit(supplyAmount);
-        marketCoreInstance.supplyLiquidity(supplyAmount, expectedShares, 100);
+        marketCoreInstance.depositLiquidity(supplyAmount, expectedShares, 100);
         vm.stopPrank();
 
         uint256 charlieShares = marketVaultInstance.balanceOf(charlie);
@@ -452,13 +461,14 @@ contract LendefiMarketVaultTest is BasicDeploy {
 
         // 4. Charlie withdraws with profit
         vm.warp(block.timestamp + 1);
+        vm.roll(block.number + 1); // Move to next block for MEV protection
 
         uint256 charlieBalanceBefore = usdcInstance.balanceOf(charlie);
         uint256 withdrawAmount = marketVaultInstance.previewRedeem(charlieShares);
 
         vm.startPrank(charlie);
         marketVaultInstance.approve(address(marketCoreInstance), charlieShares); // Approve Core to move shares
-        marketCoreInstance.withdrawLiquidity(charlieShares, withdrawAmount, 100);
+        marketCoreInstance.redeemLiquidityShares(charlieShares, withdrawAmount, 100);
         vm.stopPrank();
 
         uint256 profit = usdcInstance.balanceOf(charlie) - charlieBalanceBefore - supplyAmount;
