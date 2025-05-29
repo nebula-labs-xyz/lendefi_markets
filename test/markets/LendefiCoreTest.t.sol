@@ -30,8 +30,9 @@ contract LendefiCoreTest is BasicDeploy {
     event PositionCreated(address indexed user, uint256 indexed positionId, bool isIsolated);
     event PositionClosed(address indexed user, uint256 indexed positionId);
     event Liquidated(address indexed user, uint256 indexed positionId, address indexed liquidator);
-    event SupplyLiquidity(address indexed user, uint256 amount);
-    event WithdrawLiquidity(address indexed user, uint256 shares, uint256 amount);
+    event DepositLiquidity(address indexed user, uint256 amount);
+    event WithdrawLiquidity(address indexed user, uint256 amount);
+    event RedeemShares(address indexed user, uint256 shares, uint256 amount);
 
     function setUp() public {
         // Deploy base contracts and market
@@ -139,7 +140,7 @@ contract LendefiCoreTest is BasicDeploy {
         // Alice provides initial liquidity
         vm.startPrank(alice);
         usdcInstance.approve(address(marketCoreInstance), INITIAL_LIQUIDITY);
-        marketCoreInstance.supplyLiquidity(
+        marketCoreInstance.depositLiquidity(
             INITIAL_LIQUIDITY, marketVaultInstance.previewDeposit(INITIAL_LIQUIDITY), 100
         );
         vm.stopPrank();
@@ -170,7 +171,6 @@ contract LendefiCoreTest is BasicDeploy {
         assertEq(address(marketCoreInstance.assetsModule()), address(assetsInstance));
         assertEq(address(marketCoreInstance.treasury()), address(treasuryInstance));
         assertEq(marketCoreInstance.govToken(), address(tokenInstance));
-        assertEq(marketCoreInstance.version(), 1);
         assertEq(marketCoreInstance.WAD(), 10 ** 6); // USDC has 6 decimals
     }
 
@@ -202,8 +202,7 @@ contract LendefiCoreTest is BasicDeploy {
             rewardAmount: 5_000 ether,
             rewardInterval: 365 days,
             rewardableSupply: 500_000e6,
-            liquidatorThreshold: 50_000 ether,
-            flashLoanFee: 20 // 20 basis points
+            liquidatorThreshold: 50_000 ether
         });
 
         vm.prank(address(timelockInstance));
@@ -214,15 +213,13 @@ contract LendefiCoreTest is BasicDeploy {
             newConfig.rewardAmount,
             newConfig.rewardInterval,
             newConfig.rewardableSupply,
-            newConfig.liquidatorThreshold,
-            newConfig.flashLoanFee
+            newConfig.liquidatorThreshold
         );
         marketCoreInstance.loadProtocolConfig(newConfig);
 
         LendefiCore.ProtocolConfig memory loadedConfig = marketCoreInstance.getConfig();
         assertEq(loadedConfig.profitTargetRate, newConfig.profitTargetRate);
         assertEq(loadedConfig.borrowRate, newConfig.borrowRate);
-        assertEq(loadedConfig.flashLoanFee, newConfig.flashLoanFee);
     }
 
     function test_Revert_LoadProtocolConfig_InvalidValues() public {
@@ -232,8 +229,7 @@ contract LendefiCoreTest is BasicDeploy {
             rewardAmount: 5_000 ether,
             rewardInterval: 365 days,
             rewardableSupply: 500_000e6,
-            liquidatorThreshold: 50_000 ether,
-            flashLoanFee: 20
+            liquidatorThreshold: 50_000 ether
         });
 
         vm.prank(address(timelockInstance));
@@ -255,7 +251,7 @@ contract LendefiCoreTest is BasicDeploy {
 
     // ============ Supply Liquidity Tests ============
 
-    function test_SupplyLiquidity() public {
+    function test_depositLiquidity() public {
         uint256 amount = 100_000e6;
         deal(address(usdcInstance), charlie, amount);
 
@@ -266,21 +262,21 @@ contract LendefiCoreTest is BasicDeploy {
         usdcInstance.approve(address(marketCoreInstance), amount);
 
         vm.expectEmit(true, true, true, true);
-        emit SupplyLiquidity(charlie, amount);
-        marketCoreInstance.supplyLiquidity(amount, expectedShares, 100);
+        emit DepositLiquidity(charlie, amount);
+        marketCoreInstance.depositLiquidity(amount, expectedShares, 100);
         vm.stopPrank();
 
         assertEq(marketVaultInstance.balanceOf(charlie), expectedShares);
         assertEq(marketVaultInstance.totalAssets(), initialTotalAssets + amount);
     }
 
-    function test_Revert_SupplyLiquidity_ZeroAmount() public {
+    function test_Revert_depositLiquidity_ZeroAmount() public {
         vm.prank(charlie);
         vm.expectRevert(LendefiCore.ZeroAmount.selector);
-        marketCoreInstance.supplyLiquidity(0, 0, 100);
+        marketCoreInstance.depositLiquidity(0, 0, 100);
     }
 
-    function test_Revert_SupplyLiquidity_MEVProtection() public {
+    function test_Revert_depositLiquidity_MEVProtection() public {
         uint256 amount = 100_000e6;
         deal(address(usdcInstance), charlie, amount * 2);
 
@@ -288,18 +284,18 @@ contract LendefiCoreTest is BasicDeploy {
         usdcInstance.approve(address(marketCoreInstance), amount * 2);
 
         // First supply succeeds
-        marketCoreInstance.supplyLiquidity(amount, marketVaultInstance.previewDeposit(amount), 100);
+        marketCoreInstance.depositLiquidity(amount, marketVaultInstance.previewDeposit(amount), 100);
 
         // Calculate expected shares first (before expectRevert)
         uint256 expectedShares = marketVaultInstance.previewDeposit(amount);
 
         // Still at the same timestamp - second supply should fail
         vm.expectRevert(LendefiCore.MEVSameBlockOperation.selector);
-        marketCoreInstance.supplyLiquidity(amount, expectedShares, 100);
+        marketCoreInstance.depositLiquidity(amount, expectedShares, 100);
         vm.stopPrank();
     }
 
-    function test_Revert_SupplyLiquidity_SlippageExceeded() public {
+    function test_Revert_depositLiquidity_SlippageExceeded() public {
         uint256 amount = 100_000e6;
         deal(address(usdcInstance), charlie, amount);
 
@@ -310,7 +306,7 @@ contract LendefiCoreTest is BasicDeploy {
         uint256 unrealisticShares = marketVaultInstance.previewDeposit(amount) * 2;
 
         vm.expectRevert(LendefiCore.MEVSlippageExceeded.selector);
-        marketCoreInstance.supplyLiquidity(amount, unrealisticShares, 100);
+        marketCoreInstance.depositLiquidity(amount, unrealisticShares, 100);
         vm.stopPrank();
     }
 
@@ -323,23 +319,25 @@ contract LendefiCoreTest is BasicDeploy {
 
         vm.startPrank(charlie);
         usdcInstance.approve(address(marketCoreInstance), amount);
-        marketCoreInstance.supplyLiquidity(amount, marketVaultInstance.previewDeposit(amount), 100);
+        marketCoreInstance.depositLiquidity(amount, marketVaultInstance.previewDeposit(amount), 100);
         uint256 shares = marketVaultInstance.balanceOf(charlie);
         vm.stopPrank();
 
-        // Warp time to allow withdrawal
-        vm.warp(block.timestamp + 1);
+        // Roll to next block for MEV protection
+        vm.roll(block.number + 1);
 
-        // Withdraw half
+        // Withdraw half (using share redemption)
         uint256 withdrawShares = shares / 2;
         uint256 expectedAmount = marketVaultInstance.previewRedeem(withdrawShares);
         uint256 balanceBefore = usdcInstance.balanceOf(charlie);
 
         vm.startPrank(charlie);
-        marketVaultInstance.approve(address(marketCoreInstance), withdrawShares); // Approve Core to move shares
+        // First approve the vault to be used by core
+        marketVaultInstance.approve(address(marketCoreInstance), withdrawShares);
+        
         vm.expectEmit(true, true, true, true);
-        emit WithdrawLiquidity(charlie, withdrawShares, expectedAmount);
-        marketCoreInstance.withdrawLiquidity(withdrawShares, expectedAmount, 100);
+        emit RedeemShares(charlie, withdrawShares, expectedAmount);
+        marketCoreInstance.redeemLiquidityShares(withdrawShares, expectedAmount, 100);
         vm.stopPrank();
 
         assertEq(usdcInstance.balanceOf(charlie) - balanceBefore, expectedAmount);
