@@ -191,7 +191,6 @@ contract LendefiMarketVault is
         emit FlashLoanFeeUpdated(oldFee, newFee);
     }
 
-
     /**
      * @notice Boost yield by adding liquidity
      * @dev Only callable by protocol role (used during liquidations)
@@ -422,10 +421,10 @@ contract LendefiMarketVault is
     function isRewardable(address user) public view returns (bool) {
         uint256 lastBlock = liquidityOperationBlock[user];
         if (lastBlock == 0) return false; // Never had liquidity operation
-        
+
         IPROTOCOL.ProtocolConfig memory config = IPROTOCOL(lendefiCore).getConfig();
         if (config.rewardAmount == 0) return false; // Rewards disabled
-        
+
         uint256 baseAmount = balanceOf(user) > 0 ? (balanceOf(user) * totalSuppliedLiquidity) / totalSupply() : 0;
         return block.number - lastBlock >= config.rewardInterval && baseAmount >= config.rewardableSupply;
     }
@@ -433,9 +432,8 @@ contract LendefiMarketVault is
     /**
      * @notice Authorizes the upgrade of the contract
      * @dev Only callable by admin
-     * @param newImplementation The address of the new implementation
      */
-    function _authorizeUpgrade(address newImplementation) internal override onlyRole(LendefiConstants.UPGRADER_ROLE) {
+    function _authorizeUpgrade(address) internal override onlyRole(LendefiConstants.UPGRADER_ROLE) {
         version++;
     }
 }
