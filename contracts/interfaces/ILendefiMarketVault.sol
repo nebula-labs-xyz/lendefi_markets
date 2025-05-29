@@ -3,6 +3,7 @@ pragma solidity 0.8.23;
 
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {IPROTOCOL} from "./IProtocol.sol";
+import {IASSETS} from "./IASSETS.sol";
 
 interface ILendefiMarketVault is IERC4626 {
     // ========== EVENTS ==========
@@ -44,6 +45,7 @@ interface ILendefiMarketVault is IERC4626 {
         address core,
         address baseAsset,
         address _ecosystem,
+        address _assetsModule,
         string memory name,
         string memory symbol
     ) external;
@@ -72,4 +74,5 @@ interface ILendefiMarketVault is IERC4626 {
     function utilization() external view returns (uint256);
     function isRewardable(address user) external view returns (bool);
     function getSupplyRate() external view returns (uint256);
+    function getBorrowRate(IASSETS.CollateralTier tier) external view returns (uint256);
 }
