@@ -59,63 +59,114 @@ contract LendefiCore is
 
     // ========== STATE VARIABLES ==========
 
+    /// @notice Address of the governance token contract
     address public govToken;
+
+    /// @notice Address of the treasury contract that receives protocol fees
     address public treasury;
+
+    /// @notice Address of the base asset for this market (e.g., USDC)
     address public baseAsset;
+
+    /// @notice Address of the market factory that deployed this instance
     address public marketFactory;
+
+    /// @notice Address of the cloneable vault implementation for user positions
     address public cVault;
 
+    /// @notice Total interest accrued by all borrowers across all positions
     uint256 public totalAccruedBorrowerInterest;
+
+    /// @notice Decimals precision of the base asset (e.g., 1e6 for USDC)
     uint256 public baseDecimals;
 
+    /// @notice Market configuration including core addresses and parameters
     Market internal marketInfo;
+
+    /// @notice Protocol-wide configuration parameters (rates, rewards, thresholds)
     ProtocolConfig internal mainConfig;
 
-    IASSETS public assetsModule;
-    ILendefiMarketVault public baseVault;
+    /// @notice Interface to the assets module for collateral management and oracles
+    IASSETS internal assetsModule;
+
+    /// @notice Interface to the market vault for liquidity management
+    ILendefiMarketVault internal baseVault;
 
     ///////////////////////////////////////////////////////
     // -------------------Mappings ----------------------//
     ///////////////////////////////////////////////////////
     /// @notice Total value locked per asset in USD
+    /// @dev EnumerableMap for efficient iteration over all tracked assets
     EnumerableMap.AddressToUintMap internal assetTVLinUSD;
+
+    /// @notice Total value locked per asset in native token units
+    /// @dev Maps asset address to total amount locked across all positions
     mapping(address => uint256) public assetTVL;
+
+    /// @notice User positions storage
+    /// @dev Maps user address to array of their positions
     mapping(address => UserPosition[]) internal positions;
+
+    /// @notice Collateral tracking for each position
+    /// @dev Maps user => positionId => EnumerableMap of (asset => amount)
     mapping(address => mapping(uint256 => EnumerableMap.AddressToUintMap)) internal positionCollateral;
+
+    /// @notice Storage gap for future upgrades
+    /// @dev Reserves storage slots for upgradeable contract pattern
     uint256[10] private __gap;
 
     // ========== EVENTS AND ERRORS ==========
     // Events and errors are defined in IPROTOCOL interface
 
     // ========== MODIFIERS ==========
+
+    /// @notice Ensures a position exists for the given user
+    /// @param user Address of the position owner
+    /// @param positionId Index of the position in user's position array
     modifier validPosition(address user, uint256 positionId) {
         if (positionId >= positions[user].length) revert InvalidPosition();
         _;
     }
 
+    /// @notice Ensures a position exists and is in ACTIVE status
+    /// @param user Address of the position owner
+    /// @param positionId Index of the position in user's position array
     modifier activePosition(address user, uint256 positionId) {
         if (positionId >= positions[user].length) revert InvalidPosition();
         if (positions[user][positionId].status != PositionStatus.ACTIVE) revert InactivePosition();
         _;
     }
 
+    /// @notice Ensures an asset is whitelisted and active in the protocol
+    /// @param asset Address of the asset to validate
     modifier validAsset(address asset) {
         if (!assetsModule.isAssetValid(asset)) revert NotListed();
         _;
     }
 
+    /// @notice Ensures an amount is non-zero
+    /// @param amount The amount to validate
     modifier validAmount(uint256 amount) {
         if (amount == 0) revert ZeroAmount();
         _;
     }
 
     // ========== CONSTRUCTOR ==========
+    /// @notice Disables initializers to prevent implementation contract initialization
+    /// @dev Required for UUPS upgradeable pattern security
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
     }
 
     // ========== INITIALIZATION ==========
+    /// @notice Initializes the core contract with essential protocol components
+    /// @dev Can only be called once during deployment by the factory contract
+    /// @param admin Address to receive all administrative roles
+    /// @param govToken_ Address of the governance token contract
+    /// @param assetsModule_ Address of the assets module for collateral management
+    /// @param treasury_ Address of the treasury contract for fee collection
+    /// @param positionVault Address of the cloneable vault implementation
     function initialize(
         address admin,
         address govToken_,
@@ -823,6 +874,15 @@ contract LendefiCore is
     }
 
     /**
+     * @notice Gets the total amount of debt currently outstanding in the protocol
+     * @dev Tracks total debt including accrued interest
+     * @return The total amount of debt outstanding
+     */
+    function totalBorrow() external view returns (uint256) {
+        return baseVault.totalBorrow();
+    }
+
+    /**
      * @notice Calculates the current debt including accrued interest for a position
      * @dev Uses the appropriate interest rate based on the position's collateral tier
      * @param user Address of the position owner
@@ -1070,13 +1130,6 @@ contract LendefiCore is
      */
     function getSupplyRate() public view returns (uint256) {
         return baseVault.getSupplyRate();
-        // return LendefiRates.getSupplyRate(
-        //     baseVault.totalSupply(),
-        //     totalBorrow,
-        //     baseVault.totalSuppliedLiquidity(),
-        //     mainConfig.profitTargetRate,
-        //     baseVault.totalAssets()
-        // );
     }
 
     /**
@@ -1120,12 +1173,13 @@ contract LendefiCore is
     /**
      * @notice Checks if the protocol is solvent based on total asset value and borrow amount
      * @dev Ensures that the total asset value exceeds the total borrow amount
-     * @return True if the protocol is solvent, false otherwise, and amount of total asset value
+     * @return isProtocolSolvent True if the protocol is solvent, false otherwise
+     * @return totalAssetValue Total value of all assets in the protocol (base asset + collateral)
      */
-    function isCollateralized() public view returns (bool, uint256) {
+    function isCollateralized() public view returns (bool isProtocolSolvent, uint256 totalAssetValue) {
         uint256 totalBorrowAmount = baseVault.totalBorrow();
 
-        uint256 totalAssetValue = baseVault.totalAssets() - totalBorrowAmount;
+        totalAssetValue = baseVault.totalAssets() - totalBorrowAmount;
         uint256 length = assetTVLinUSD.length();
 
         for (uint256 i = 0; i < length; i++) {
@@ -1134,14 +1188,6 @@ contract LendefiCore is
         }
 
         return (totalAssetValue >= totalBorrowAmount, totalAssetValue);
-    }
-
-    /**
-     * @notice Gets the total amount borrowed across all positions
-     * @return The total borrowed amount in base asset units
-     */
-    function totalBorrow() external view returns (uint256) {
-        return baseVault.totalBorrow();
     }
 
     // ========== INTERNAL FUNCTIONS ==========
