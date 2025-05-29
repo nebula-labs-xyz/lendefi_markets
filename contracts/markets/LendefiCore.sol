@@ -32,104 +32,30 @@ import {LendefiRates} from "./lib/LendefiRates.sol";
 import {LendefiConstants} from "./lib/LendefiConstants.sol";
 import {IVAULT} from "../interfaces/IVAULT.sol";
 import {IASSETS} from "../interfaces/IASSETS.sol";
+import {IPROTOCOL} from "../interfaces/IProtocol.sol";
 import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
-import {LendefiVault} from "./LendefiVault.sol";
 import {ILendefiMarketVault} from "../interfaces/ILendefiMarketVault.sol";
 import {FullMath} from "@uniswap/v4-core/src/libraries/FullMath.sol";
 
 /// @custom:oz-upgrades
-contract LendefiCore is Initializable, AccessControlUpgradeable, ReentrancyGuardUpgradeable, PausableUpgradeable {
+contract LendefiCore is
+    IPROTOCOL,
+    Initializable,
+    AccessControlUpgradeable,
+    ReentrancyGuardUpgradeable,
+    PausableUpgradeable
+{
     using Clones for address;
     using SafeERC20 for IERC20;
     using LendefiRates for *;
     using LendefiConstants for *;
     using EnumerableMap for EnumerableMap.AddressToUintMap;
 
-    enum PositionStatus {
-        INACTIVE,
-        ACTIVE,
-        LIQUIDATED,
-        CLOSED
-    }
-    enum CollateralTier {
-        STABLE,
-        CROSS_A,
-        CROSS_B,
-        ISOLATED
-    }
-
-    /**
-     * @notice Oracle types
-     */
-    enum OracleType {
-        CHAINLINK,
-        UNISWAP_V3_TWAP
-    }
+    // ========== ENUMS ==========
+    // Enums are now defined in IPROTOCOL interface to avoid duplication
 
     // ========== STRUCTS ==========
-    struct ProtocolConfig {
-        uint256 profitTargetRate; // Rate in 1e6
-        uint256 borrowRate; // Rate in 1e6
-        uint256 rewardAmount; // Amount of governance tokens
-        uint256 rewardInterval; // Duration in blocks
-        uint256 rewardableSupply; // Amount of base asset
-        uint256 liquidatorThreshold; // Amount of governance tokens
-    }
-
-    struct UserPosition {
-        address vault; // Address of the vault
-        bool isIsolated; // Whether position is isolated
-        PositionStatus status; // Current status
-        uint256 debtAmount; // Amount of debt
-        uint256 lastInterestAccrual; // Last interest accrual timestamp
-    }
-
-    /**
-     * @notice Configuration for Uniswap V3 pool-based oracle
-     */
-    struct UniswapPoolConfig {
-        address pool;
-        uint32 twapPeriod;
-        uint8 active;
-    }
-
-    /**
-     * @notice Configuration for Chainlink oracle
-     */
-    struct ChainlinkOracleConfig {
-        address oracleUSD;
-        uint8 active;
-    }
-
-    /**
-     * @notice Asset configuration
-     */
-    struct Asset {
-        uint8 active;
-        uint8 decimals;
-        uint16 borrowThreshold;
-        uint16 liquidationThreshold;
-        uint256 maxSupplyThreshold;
-        uint256 isolationDebtCap;
-        uint8 assetMinimumOracles;
-        address porFeed;
-        OracleType primaryOracleType;
-        CollateralTier tier;
-        ChainlinkOracleConfig chainlinkConfig;
-        UniswapPoolConfig poolConfig;
-    }
-
-    struct Market {
-        address core; // Address of the core contract
-        address baseVault; // Address of the wrapper contract
-        address baseAsset; // Address of the base asset
-        address porFeed; // Proof of Reserve feed
-        uint256 decimals; // Base asset decimals
-        string name; // Market name
-        string symbol; // Market symbol
-        uint256 createdAt; // Creation timestamp
-        bool active; // Whether the market is active
-    }
+    // Structs are now defined in IPROTOCOL interface to avoid duplication
 
     // ========== STATE VARIABLES ==========
 
@@ -143,9 +69,8 @@ contract LendefiCore is Initializable, AccessControlUpgradeable, ReentrancyGuard
     uint256 public totalAccruedBorrowerInterest;
     uint256 public baseDecimals;
 
-    /// @notice Information about the currently pending upgrade
-    Market public market;
-    ProtocolConfig public mainConfig;
+    Market internal marketInfo;
+    ProtocolConfig internal mainConfig;
 
     IASSETS public assetsModule;
     ILendefiMarketVault public baseVault;
@@ -156,73 +81,12 @@ contract LendefiCore is Initializable, AccessControlUpgradeable, ReentrancyGuard
     /// @notice Total value locked per asset in USD
     EnumerableMap.AddressToUintMap internal assetTVLinUSD;
     mapping(address => uint256) public assetTVL;
-
     mapping(address => UserPosition[]) internal positions;
     mapping(address => mapping(uint256 => EnumerableMap.AddressToUintMap)) internal positionCollateral;
-
     uint256[10] private __gap;
 
-    // ========== EVENTS ==========
-    event Initialized(address indexed baseAsset);
-    event SupplyCollateral(address indexed user, uint256 indexed positionId, address indexed asset, uint256 amount);
-    event WithdrawCollateral(address indexed user, uint256 indexed positionId, address indexed asset, uint256 amount);
-    event Borrow(address indexed user, uint256 indexed positionId, uint256 amount);
-    event Repay(address indexed user, uint256 indexed positionId, uint256 amount);
-    event PositionCreated(address indexed user, uint256 indexed positionId, bool isIsolated);
-    event VaultCreated(address indexed user, uint256 indexed positionId, address vault);
-    event PositionClosed(address indexed user, uint256 indexed positionId);
-    event Liquidated(address indexed user, uint256 indexed positionId, address indexed liquidator);
-    event InterestAccrued(address indexed user, uint256 indexed positionId, uint256 interest);
-    event DepositLiquidity(address indexed user, uint256 amount);
-    event WithdrawLiquidity(address indexed user, uint256 amount);
-    event RedeemShares(address indexed user, uint256 shares, uint256 amount);
-    event MintShares(address indexed user, uint256 shares);
-    event ProtocolConfigUpdated(
-        uint256 profitTargetRate,
-        uint256 borrowRate,
-        uint256 rewardAmount,
-        uint256 rewardInterval,
-        uint256 rewardableSupply,
-        uint256 liquidatorThreshold
-    );
-
-    /**
-     * @notice Emitted when an asset's total value locked (TVL) is updated
-     * @param asset The address of the asset that was updated
-     * @param amount The new TVL amount
-     */
-    event TVLUpdated(address indexed asset, uint256 amount);
-
-    // ========== ERRORS ==========
-    error ZeroAmount();
-    error ZeroAddressNotAllowed();
-    error InvalidPosition();
-    error InactivePosition();
-    error MaxPositionLimitReached();
-    error NotListed();
-    error AssetCapacityReached();
-    error IsolatedAssetViolation();
-    error InvalidAssetForIsolation();
-    error MaximumAssetsReached();
-    error LowBalance();
-    error CreditLimitExceeded();
-    error LowLiquidity();
-    error IsolationDebtCapExceeded();
-
-    error NoDebt();
-    error NotEnoughGovernanceTokens();
-    error NotLiquidatable();
-    error Unauthorized();
-    error PoolLiquidityLimitReached();
-    error InvalidProfitTarget();
-    error InvalidBorrowRate();
-    error InvalidRewardAmount();
-    error InvalidInterval();
-    error MEVSameBlockOperation();
-    error MEVSlippageExceeded();
-    error InvalidSupplyAmount();
-    error InvalidLiquidatorThreshold();
-    error CloneDeploymentFailed();
+    // ========== EVENTS AND ERRORS ==========
+    // Events and errors are defined in IPROTOCOL interface
 
     // ========== MODIFIERS ==========
     modifier validPosition(address user, uint256 positionId) {
@@ -253,14 +117,18 @@ contract LendefiCore is Initializable, AccessControlUpgradeable, ReentrancyGuard
     }
 
     // ========== INITIALIZATION ==========
-    function initialize(address admin, address govToken_, address assetsModule_, address treasury_)
-        external
-        initializer
-    {
+    function initialize(
+        address admin,
+        address govToken_,
+        address assetsModule_,
+        address treasury_,
+        address vaultImplementation
+    ) external initializer {
         if (admin == address(0)) revert ZeroAddressNotAllowed();
         if (treasury_ == address(0)) revert ZeroAddressNotAllowed();
         if (assetsModule_ == address(0)) revert ZeroAddressNotAllowed();
         if (govToken_ == address(0)) revert ZeroAddressNotAllowed();
+        if (vaultImplementation == address(0)) revert ZeroAddressNotAllowed();
 
         __AccessControl_init();
         __Pausable_init();
@@ -275,19 +143,7 @@ contract LendefiCore is Initializable, AccessControlUpgradeable, ReentrancyGuard
         assetsModule = IASSETS(assetsModule_);
         marketFactory = msg.sender;
         govToken = govToken_;
-
-        // Initialize default parameters using dynamic baseDecimals
-        mainConfig = ProtocolConfig({
-            profitTargetRate: 0.01e6, // 1%
-            borrowRate: 0.06e6, // 6%
-            rewardAmount: 2_000 ether, // 2,000 governance tokens
-            rewardInterval: 180 * 24 * 60 * 5, // 180 days in blocks
-            rewardableSupply: 100_000 * baseDecimals, // 100,000 base asset units
-            liquidatorThreshold: 20_000 ether // 20,000 governance tokens
-        });
-
-        // Create vault implementation
-        cVault = address(new LendefiVault(address(this)));
+        cVault = vaultImplementation;
     }
 
     /**
@@ -302,7 +158,7 @@ contract LendefiCore is Initializable, AccessControlUpgradeable, ReentrancyGuard
      *
      * The function ensures that the market is initialized successfully and emits the appropriate events.
      *
-     * @param marketInfo Market info to be initialized
+     * @param _marketInfo Market info to be initialized
      *
      * @custom:requirements
      *   - Market info must be valid
@@ -318,19 +174,30 @@ contract LendefiCore is Initializable, AccessControlUpgradeable, ReentrancyGuard
      * @custom:emits
      *   - Initialized(baseAsset)
      */
-    function initializeMarket(Market calldata marketInfo) external {
+    function initializeMarket(Market calldata _marketInfo) external {
         if (msg.sender != marketFactory) revert Unauthorized();
 
-        if (marketInfo.baseAsset == address(0)) revert ZeroAddressNotAllowed();
-        if (marketInfo.porFeed == address(0)) revert ZeroAddressNotAllowed();
-        if (marketInfo.baseVault == address(0)) revert ZeroAddressNotAllowed();
-        if (marketInfo.core != address(this)) revert ZeroAddressNotAllowed();
+        if (_marketInfo.baseAsset == address(0)) revert ZeroAddressNotAllowed();
+        if (_marketInfo.porFeed == address(0)) revert ZeroAddressNotAllowed();
+        if (_marketInfo.baseVault == address(0)) revert ZeroAddressNotAllowed();
+        if (_marketInfo.core != address(this)) revert ZeroAddressNotAllowed();
 
-        market = marketInfo;
+        marketInfo = _marketInfo;
         baseAsset = marketInfo.baseAsset;
         baseVault = ILendefiMarketVault(marketInfo.baseVault);
         uint8 assetDecimals = IERC20Metadata(baseAsset).decimals();
         baseDecimals = 10 ** assetDecimals;
+
+        // Initialize default parameters using dynamic baseDecimals
+        mainConfig = ProtocolConfig({
+            profitTargetRate: 0.01e6, // 1%
+            borrowRate: 0.06e6, // 6%
+            rewardAmount: 2_000 ether, // 2,000 governance tokens
+            rewardInterval: 180 * 24 * 60 * 5, // 180 days in blocks
+            rewardableSupply: 100_000 * baseDecimals, // 100,000 base asset units
+            liquidatorThreshold: 20_000 ether // 20,000 governance tokens
+        });
+
         emit Initialized(marketInfo.baseAsset);
     }
 
@@ -539,8 +406,9 @@ contract LendefiCore is Initializable, AccessControlUpgradeable, ReentrancyGuard
         // Verify clone was successful
         if (vault == address(0)) revert CloneDeploymentFailed();
         if (vault.code.length == 0) revert CloneDeploymentFailed();
-
+        IVAULT(vault).initialize(address(this));
         IVAULT(vault).setOwner(msg.sender);
+
         newPosition.vault = vault;
         newPosition.isIsolated = isIsolated;
         newPosition.status = PositionStatus.ACTIVE;
@@ -1130,6 +998,22 @@ contract LendefiCore is Initializable, AccessControlUpgradeable, ReentrancyGuard
      * @return The protocol configuration
      */
     function getConfig() public view returns (ProtocolConfig memory) {
+        return mainConfig;
+    }
+
+    /**
+     * @notice Returns the market information
+     * @return The market configuration struct
+     */
+    function market() public view returns (Market memory) {
+        return marketInfo;
+    }
+
+    /**
+     * @notice Returns the main protocol configuration
+     * @return The protocol configuration struct
+     */
+    function getMainConfig() public view returns (ProtocolConfig memory) {
         return mainConfig;
     }
 
