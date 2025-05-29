@@ -122,13 +122,13 @@ contract LendefiCore is
         address govToken_,
         address assetsModule_,
         address treasury_,
-        address vaultImplementation
+        address positionVault
     ) external initializer {
         if (admin == address(0)) revert ZeroAddressNotAllowed();
         if (treasury_ == address(0)) revert ZeroAddressNotAllowed();
         if (assetsModule_ == address(0)) revert ZeroAddressNotAllowed();
         if (govToken_ == address(0)) revert ZeroAddressNotAllowed();
-        if (vaultImplementation == address(0)) revert ZeroAddressNotAllowed();
+        if (positionVault == address(0)) revert ZeroAddressNotAllowed();
 
         __AccessControl_init();
         __Pausable_init();
@@ -143,7 +143,7 @@ contract LendefiCore is
         assetsModule = IASSETS(assetsModule_);
         marketFactory = msg.sender;
         govToken = govToken_;
-        cVault = vaultImplementation;
+        cVault = positionVault;
     }
 
     /**
