@@ -11,11 +11,11 @@ contract MarketFactoryTest is BasicDeploy {
     function setUp() public {
         // Deploy basic infrastructure first
         deployMarketsWithUSDC();
-        
+
         // Create additional test assets
         baseAsset1 = new TokenMock("Test Token 1", "TEST1");
         baseAsset2 = new TokenMock("Test Token 2", "TEST2");
-        
+
         // Setup TGE for proper functionality
         vm.prank(guardian);
         tokenInstance.initializeTGE(address(ecoInstance), address(treasuryInstance));
@@ -40,10 +40,10 @@ contract MarketFactoryTest is BasicDeploy {
         // Check market exists in arrays
         address[] memory activeMarkets = marketFactoryInstance.getAllActiveMarkets();
         assertGe(activeMarkets.length, 1);
-        
+
         // Should contain our new market
         bool found = false;
-        for (uint i = 0; i < activeMarkets.length; i++) {
+        for (uint256 i = 0; i < activeMarkets.length; i++) {
             if (activeMarkets[i] == address(baseAsset1)) {
                 found = true;
                 break;
@@ -77,7 +77,7 @@ contract MarketFactoryTest is BasicDeploy {
 
     function testGetAllActiveMarkets() public {
         uint256 initialMarkets = marketFactoryInstance.getAllActiveMarkets().length;
-        
+
         // Create first market
         vm.prank(address(timelockInstance));
         marketFactoryInstance.createMarket(address(baseAsset1), "Test Market 1", "TM1");
@@ -89,11 +89,11 @@ contract MarketFactoryTest is BasicDeploy {
         // Get all active markets
         address[] memory activeMarkets = marketFactoryInstance.getAllActiveMarkets();
         assertEq(activeMarkets.length, initialMarkets + 2);
-        
+
         // Check that our markets are included
         bool found1 = false;
         bool found2 = false;
-        for (uint i = 0; i < activeMarkets.length; i++) {
+        for (uint256 i = 0; i < activeMarkets.length; i++) {
             if (activeMarkets[i] == address(baseAsset1)) found1 = true;
             if (activeMarkets[i] == address(baseAsset2)) found2 = true;
         }
