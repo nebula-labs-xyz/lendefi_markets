@@ -364,7 +364,16 @@ contract LendefiCore is
         nonReentrant
         whenNotPaused
     {
-        // Mint shares from vault - tokens go directly to user
+        // Calculate required assets for minting shares
+        uint256 assets = baseVault.previewMint(shares);
+
+        // Transfer tokens from user to this contract
+        IERC20(baseAsset).safeTransferFrom(msg.sender, address(this), assets);
+
+        // Approve vault to spend tokens
+        IERC20(baseAsset).forceApprove(address(baseVault), assets);
+
+        // Mint shares from vault
         uint256 actualAmount = baseVault.mint(shares, msg.sender);
         _validateSlippage(actualAmount, expectedAmount, maxSlippageBps);
         emit MintShares(msg.sender, shares);
@@ -607,9 +616,11 @@ contract LendefiCore is
     /**
      * @notice Withdraws collateral assets from a position
      * @dev This function handles removing collateral from an existing position, which includes:
-     *      1. Processing the withdrawal via _processWithdrawal (validation and state updates)
-     *      2. Emitting the withdrawal event
-     *      3. Transferring the assets from the protocol to the caller
+     *      1. MEV protection via position timestamp checking
+     *      2. Processing the withdrawal via _processWithdrawal (validation and state updates)
+     *      3. Slippage protection on collateral value changes
+     *      4. Emitting the withdrawal event
+     *      5. Transferring the assets from the protocol to the caller
      *
      * The function ensures that the position remains sufficiently collateralized
      * after the withdrawal by checking that the remaining credit limit exceeds
@@ -618,15 +629,20 @@ contract LendefiCore is
      * @param asset Address of the collateral asset to withdraw
      * @param amount Amount of the asset to withdraw
      * @param positionId ID of the position from which to withdraw
+     * @param expectedCreditLimit Expected credit limit after withdrawal for slippage protection
+     * @param maxSlippageBps Maximum slippage percentage allowed
      *
      * @custom:requirements
      *   - Protocol must not be paused
      *   - Position must exist and be in ACTIVE status
+     *   - No same-block operations allowed (MEV protection)
      *   - For isolated positions: asset must match the position's initial asset
      *   - Current balance must be greater than or equal to the withdrawal amount
      *   - Position must remain sufficiently collateralized after withdrawal
+     *   - Credit limit after withdrawal must not deviate beyond slippage tolerance
      *
      * @custom:state-changes
+     *   - Updates position.lastInterestAccrual to current block timestamp
      *   - Decreases positionCollateralAmounts[msg.sender][positionId][asset] by amount
      *   - Updates protocol-wide TVL for the asset
      *   - For non-isolated positions: Removes asset entirely if balance becomes zero
@@ -640,19 +656,32 @@ contract LendefiCore is
      *   - ZeroAmount: Thrown when amount is zero
      *   - InvalidPosition: Thrown when position doesn't exist
      *   - InactivePosition: Thrown when position is not in ACTIVE status
+     *   - MEVSameBlockOperation: Thrown when attempting multiple operations in same block
      *   - InvalidAssetForIsolation: Thrown when withdrawing an asset that doesn't match the isolated position's asset
      *   - LowBalance: Thrown when not enough collateral balance to withdraw
      *   - CreditLimitExceeded: Thrown when withdrawal would leave position undercollateralized
+     *   - MEVSlippageExceeded: Thrown when credit limit deviates beyond slippage tolerance
      */
-    function withdrawCollateral(address asset, uint256 amount, uint256 positionId)
-        external
-        validAmount(amount)
-        nonReentrant
-        whenNotPaused
-    {
+    function withdrawCollateral(
+        address asset,
+        uint256 amount,
+        uint256 positionId,
+        uint256 expectedCreditLimit,
+        uint32 maxSlippageBps
+    ) external validAmount(amount) activePosition(msg.sender, positionId) nonReentrant whenNotPaused {
+        UserPosition storage position = positions[msg.sender][positionId];
+
+        // MEV protection: prevent same-block operations
+        if (position.lastInterestAccrual >= block.timestamp) revert MEVSameBlockOperation();
+        position.lastInterestAccrual = block.timestamp;
+        // Slippage protection on credit limit
+        uint256 creditLimit = calculateCreditLimit(msg.sender, positionId);
+        _validateSlippage(creditLimit, expectedCreditLimit, maxSlippageBps);
+
         _processWithdrawal(asset, amount, positionId);
+
         // Transfer from vault to user
-        address vault = positions[msg.sender][positionId].vault;
+        address vault = position.vault;
         ILendefiPositionVault(vault).withdrawToken(asset, amount);
         emit WithdrawCollateral(msg.sender, positionId, asset, amount);
     }
@@ -1296,10 +1325,7 @@ contract LendefiCore is
      *   - LowBalance: Thrown when position doesn't have sufficient balance of the asset
      *   - CreditLimitExceeded: Thrown when withdrawal would leave position undercollateralized
      */
-    function _processWithdrawal(address asset, uint256 amount, uint256 positionId)
-        internal
-        activePosition(msg.sender, positionId)
-    {
+    function _processWithdrawal(address asset, uint256 amount, uint256 positionId) internal {
         UserPosition storage position = positions[msg.sender][positionId];
         EnumerableMap.AddressToUintMap storage collaterals = positionCollateral[msg.sender][positionId];
 
@@ -1378,9 +1404,9 @@ contract LendefiCore is
      * @param expectedAmount The expected amount from the user
      * @param maxSlippageBps Maximum allowed slippage in basis points
      */
-    function _validateSlippage(uint256 actualAmount, uint256 expectedAmount, uint32 maxSlippageBps) 
-        internal 
-        pure 
+    function _validateSlippage(uint256 actualAmount, uint256 expectedAmount, uint32 maxSlippageBps)
+        internal
+        pure
         validAmount(actualAmount)
         validAmount(expectedAmount)
         validAmount(maxSlippageBps)
