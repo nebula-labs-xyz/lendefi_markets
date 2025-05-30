@@ -369,20 +369,20 @@ contract LendefiAssetsBranchTest is BasicDeploy {
         vm.startPrank(address(timelockInstance));
         assetsInstance.setCoreAddress(address(marketCoreInstance));
 
-        // Mock marketCoreInstance.assetTVL call
+        // Mock marketCoreInstance.getAssetTVL call
         vm.mockCall(
             address(marketCoreInstance),
-            abi.encodeWithSelector(marketCoreInstance.assetTVL.selector, address(wethInstance)),
-            abi.encode(500_000e18) // Half capacity
+            abi.encodeWithSelector(marketCoreInstance.getAssetTVL.selector, address(wethInstance)),
+            abi.encode(500_000e18, 1_250_000e8, block.timestamp) // TVL, TVL USD, lastUpdate
         );
         vm.stopPrank();
 
         // Test not at capacity
-        bool atCapacity1 = assetsInstance.isAssetAtCapacity(address(wethInstance), 400_000e18);
+        bool atCapacity1 = assetsInstance.isAssetAtCapacity(address(wethInstance), 400_000e18, 500_000e18);
         assertFalse(atCapacity1, "Should not be at capacity with 900,000e18 total");
 
         // Test at capacity
-        bool atCapacity2 = assetsInstance.isAssetAtCapacity(address(wethInstance), 600_000e18);
+        bool atCapacity2 = assetsInstance.isAssetAtCapacity(address(wethInstance), 600_000e18, 500_000e18);
         assertTrue(atCapacity2, "Should be at capacity with 1,100,000e18 total");
     }
 
