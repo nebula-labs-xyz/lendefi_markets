@@ -36,6 +36,7 @@ import {TimelockControllerUpgradeable} from
 import {ITransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 // Markets Layer imports
 import {LendefiMarketFactory} from "../contracts/markets/LendefiMarketFactory.sol";
+import {LendefiMarketFactoryV2} from "../contracts/upgrades/LendefiMarketFactoryV2.sol";
 import {LendefiCore} from "../contracts/markets/LendefiCore.sol";
 import {LendefiMarketVault} from "../contracts/markets/LendefiMarketVault.sol";
 import {LendefiPositionVault} from "../contracts/markets/LendefiPositionVault.sol";
@@ -637,6 +638,71 @@ contract BasicDeploy is Test {
         assertFalse(assetsInstanceV2.hasRole(UPGRADER_ROLE, gnosisSafe), "Role should be revoked successfully");
         assetsInstance.grantRole(UPGRADER_ROLE, gnosisSafe);
         assertTrue(assetsInstanceV2.hasRole(UPGRADER_ROLE, gnosisSafe), "Lost UPGRADER_ROLE");
+        vm.stopPrank();
+    }
+
+    /**
+     * @notice Upgrades the LendefiMarketFactory implementation using timelocked pattern
+     * @dev Uses the two-phase upgrade process: schedule → wait → execute
+     */
+    function deployMarketFactoryUpgrade() internal {
+        // First make sure the market factory is deployed
+        if (address(marketFactoryInstance) == address(0)) {
+            _deployMarketFactory();
+        }
+
+        // Get the proxy address
+        address payable proxy = payable(address(marketFactoryInstance));
+
+        // Get the current implementation address for assertion later
+        address implAddressV1 = Upgrades.getImplementationAddress(proxy);
+
+        // Create options struct for the implementation
+        Options memory opts = Options({
+            referenceContract: "LendefiMarketFactory.sol",
+            constructorData: "",
+            unsafeAllow: "",
+            unsafeAllowRenames: false,
+            unsafeSkipStorageCheck: false,
+            unsafeSkipAllChecks: false,
+            defender: DefenderOptions({
+                useDefenderDeploy: false,
+                skipVerifySourceCode: false,
+                relayerId: "",
+                salt: bytes32(0),
+                upgradeApprovalProcessId: ""
+            })
+        });
+
+        // Deploy the implementation without upgrading
+        address newImpl = Upgrades.prepareUpgrade("LendefiMarketFactoryV2.sol", opts);
+
+        // Schedule the upgrade with that exact address
+        vm.startPrank(address(timelockInstance));
+        marketFactoryInstance.scheduleUpgrade(newImpl);
+
+        // Fast forward past the timelock period (3 days for MarketFactory)
+        vm.warp(block.timestamp + 3 days + 1);
+
+        // Execute the upgrade
+        ITransparentUpgradeableProxy(proxy).upgradeToAndCall(newImpl, "");
+        vm.stopPrank();
+
+        // Verification
+        address implAddressV2 = Upgrades.getImplementationAddress(proxy);
+        LendefiMarketFactoryV2 marketFactoryInstanceV2 = LendefiMarketFactoryV2(proxy);
+
+        // Assert that upgrade was successful
+        assertEq(marketFactoryInstanceV2.version(), 2, "Version not incremented to 2");
+        assertFalse(implAddressV2 == implAddressV1, "Implementation address didn't change");
+        assertTrue(marketFactoryInstanceV2.hasRole(DEFAULT_ADMIN_ROLE, address(timelockInstance)), "Lost DEFAULT_ADMIN_ROLE");
+
+        // Test role management still works - timelock should have admin control
+        vm.startPrank(address(timelockInstance));
+        marketFactoryInstanceV2.grantRole(UPGRADER_ROLE, gnosisSafe);
+        assertTrue(marketFactoryInstanceV2.hasRole(UPGRADER_ROLE, gnosisSafe), "Should grant UPGRADER_ROLE");
+        marketFactoryInstanceV2.revokeRole(UPGRADER_ROLE, gnosisSafe);
+        assertFalse(marketFactoryInstanceV2.hasRole(UPGRADER_ROLE, gnosisSafe), "Should revoke UPGRADER_ROLE");
         vm.stopPrank();
     }
 
