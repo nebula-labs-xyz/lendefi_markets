@@ -749,7 +749,7 @@ contract LendefiAssetsTest is BasicDeploy {
         vm.stopPrank();
 
         // Verify current/max supply ratio
-        uint256 currentSupply = marketCoreInstance.assetTVL(address(wethInstance));
+        (uint256 currentSupply,,) = marketCoreInstance.getAssetTVL(address(wethInstance));
         assertEq(currentSupply, depositAmount);
         assertEq(currentSupply * 100 / maxSupply, 30); // 30% utilization
     }
@@ -931,8 +931,8 @@ contract LendefiAssetsTest is BasicDeploy {
         // Verify coreAddress is set correctly
         assertEq(assetsInstance.coreAddress(), address(marketCoreInstance));
 
-        // Use marketCoreInstance.assetTVL function
-        uint256 initialTvl = marketCoreInstance.assetTVL(address(wethInstance));
+        // Use marketCoreInstance.getAssetTVL function
+        (uint256 initialTvl,,) = marketCoreInstance.getAssetTVL(address(wethInstance));
         assertEq(initialTvl, 0);
 
         // Add some collateral to create TVL
@@ -948,7 +948,7 @@ contract LendefiAssetsTest is BasicDeploy {
         vm.stopPrank();
 
         // Verify TVL is now updated
-        uint256 finalTvl = marketCoreInstance.assetTVL(address(wethInstance));
+        (uint256 finalTvl,,) = marketCoreInstance.getAssetTVL(address(wethInstance));
         assertEq(finalTvl, depositAmount);
     }
 
@@ -992,11 +992,11 @@ contract LendefiAssetsTest is BasicDeploy {
         marketCoreInstance.supplyCollateral(address(wethInstance), depositAmount, positionId);
         vm.stopPrank();
 
-        // Should return false when not at capacity
-        assertFalse(assetsInstance.isAssetAtCapacity(address(wethInstance), 400 ether));
+        // Should return false when not at capacity (current 500 + 400 = 900 < 1000 max)
+        assertFalse(assetsInstance.isAssetAtCapacity(address(wethInstance), 400 ether, depositAmount));
 
-        // Should return true when requested amount would exceed capacity
-        assertTrue(assetsInstance.isAssetAtCapacity(address(wethInstance), 501 ether));
+        // Should return true when requested amount would exceed capacity (current 500 + 501 = 1001 > 1000 max)
+        assertTrue(assetsInstance.isAssetAtCapacity(address(wethInstance), 501 ether, depositAmount));
     }
 
     function test_GetOracleCount() public {
