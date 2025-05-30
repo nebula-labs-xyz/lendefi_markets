@@ -138,6 +138,8 @@ contract LendefiCoreFuzzTest is BasicDeploy {
         // Supply collateral
         deal(address(wethInstance), bob, collateralAmount);
         _supplyCollateral(bob, positionId, address(wethInstance), collateralAmount);
+        vm.warp(block.timestamp + 1);
+        vm.roll(block.number + 1);
 
         // Verify supply
         address[] memory assets = marketCoreInstance.getPositionCollateralAssets(bob, positionId);
@@ -146,8 +148,16 @@ contract LendefiCoreFuzzTest is BasicDeploy {
 
         // Withdraw if amount > 0
         if (withdrawAmount > 0) {
+            uint256 expectedCreditLimit = marketCoreInstance.calculateCreditLimit(bob, positionId);
+
             vm.startPrank(bob);
-            marketCoreInstance.withdrawCollateral(address(wethInstance), withdrawAmount, positionId);
+            marketCoreInstance.withdrawCollateral(
+                address(wethInstance),
+                withdrawAmount,
+                positionId,
+                expectedCreditLimit,
+                50 // 0.5% max slippage for reasonable tolerance
+            );
             vm.stopPrank();
 
             assertEq(wethInstance.balanceOf(bob), withdrawAmount);
