@@ -121,6 +121,15 @@ interface IPROTOCOL {
         bool active; // Whether market is active
     }
 
+    /**
+     * @notice Asset tracking data
+     * @dev Stores TVL, TVL in USD, and last update timestamp
+     */
+    struct AssetTracking {
+        uint256 tvl;
+        uint256 tvlUSD;
+        uint256 lastUpdate;
+    }
     // ========== EVENTS ==========
 
     /**
@@ -537,9 +546,11 @@ interface IPROTOCOL {
     /**
      * @notice Gets the total value locked for a specific asset
      * @param asset The address of the asset to query
-     * @return The total value locked for the asset
+     * @return tvl Total value locked in native token units
+     * @return tvlUSD Total value locked in USD
+     * @return lastUpdate Timestamp of last update
      */
-    function assetTVL(address asset) external view returns (uint256);
+    function getAssetTVL(address asset) external view returns (uint256 tvl, uint256 tvlUSD, uint256 lastUpdate);
 
     // Configuration
     /**
