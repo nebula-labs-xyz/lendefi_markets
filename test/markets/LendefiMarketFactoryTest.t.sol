@@ -327,8 +327,10 @@ contract LendefiMarketFactoryTest is BasicDeploy {
         assertEq(marketVaultInstance.totalBorrow(), 0); // USDC market unaffected
 
         // Verify both markets track collateral independently
-        assertEq(daiCore.assetTVL(address(wethInstance)), 1 ether);
-        assertEq(marketCoreInstance.assetTVL(address(wethInstance)), 0);
+        (uint256 daiTvl,,) = daiCore.getAssetTVL(address(wethInstance));
+        (uint256 usdcTvl,,) = marketCoreInstance.getAssetTVL(address(wethInstance));
+        assertEq(daiTvl, 1 ether);
+        assertEq(usdcTvl, 0);
     }
 
     // ============ Upgrade Tests ============
