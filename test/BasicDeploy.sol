@@ -38,6 +38,7 @@ import {ITransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transp
 import {LendefiMarketFactory} from "../contracts/markets/LendefiMarketFactory.sol";
 import {LendefiMarketFactoryV2} from "../contracts/upgrades/LendefiMarketFactoryV2.sol";
 import {LendefiCore} from "../contracts/markets/LendefiCore.sol";
+import {LendefiCoreV2} from "../contracts/upgrades/LendefiCoreV2.sol";
 import {LendefiMarketVault} from "../contracts/markets/LendefiMarketVault.sol";
 import {LendefiPositionVault} from "../contracts/markets/LendefiPositionVault.sol";
 import {LendefiPoRFeed} from "../contracts/markets/LendefiPoRFeed.sol";
@@ -831,5 +832,50 @@ contract BasicDeploy is Test {
 
         // Deploy USDC market
         _deployMarket(address(usdcInstance), "Lendefi Yield Token", "LYTUSDC");
+    }
+
+    /**
+     * @notice Upgrades the LendefiCore implementation using ERC1967Proxy pattern
+     * @dev Follows the same pattern as deployTimelockUpgrade
+     */
+    function deployLendefiCoreUpgrade() internal {
+        // First make sure the market core is deployed
+        deployComplete();
+        _deployAssetsModule();
+
+        // Deploy new implementation
+        LendefiPositionVault positionVaultImpl = new LendefiPositionVault();
+
+        // Get initialization data from current core
+        bytes memory initData = abi.encodeWithSelector(
+            LendefiCore.initialize.selector,
+            address(timelockInstance), // admin
+            address(tokenInstance), // govToken_
+            address(assetsInstance), // assetsModule_
+            address(treasuryInstance), // treasury_
+            address(positionVaultImpl) // positionVault
+        );
+        address proxy1 = Upgrades.deployTransparentProxy("LendefiCore.sol", address(timelockInstance), initData);
+
+        marketCoreInstance = LendefiCore(payable(address(proxy1)));
+        address implAddressV1 = Upgrades.getImplementationAddress(proxy1);
+
+        // Upgrade to LendefiCoreV2 with empty data (no re-initialization needed)
+        vm.startPrank(address(timelockInstance));
+        Upgrades.upgradeProxy(proxy1, "LendefiCoreV2.sol", "");
+        vm.stopPrank();
+
+        address implAddressV2 = Upgrades.getImplementationAddress(proxy1);
+        LendefiCoreV2 coreInstanceV2 = LendefiCoreV2(proxy1);
+
+        assertFalse(implAddressV2 == implAddressV1);
+
+        bool isUpgrader = coreInstanceV2.hasRole(UPGRADER_ROLE, address(timelockInstance));
+        assertTrue(isUpgrader == true);
+
+        // Test that core functions still work
+        assertTrue(
+            coreInstanceV2.hasRole(DEFAULT_ADMIN_ROLE, address(timelockInstance)), "Should have DEFAULT_ADMIN_ROLE"
+        );
     }
 }
