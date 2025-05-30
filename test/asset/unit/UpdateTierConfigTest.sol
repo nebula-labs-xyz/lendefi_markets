@@ -32,7 +32,7 @@ contract UpdateTierConfigTest is BasicDeploy {
         wethOracleInstance.setTimestamp(block.timestamp);
         wethOracleInstance.setRoundId(1);
         wethOracleInstance.setAnsweredInRound(1);
-        
+
         usdcOracleInstance = new MockPriceOracle();
         usdcOracleInstance.setPrice(1e8); // $1 per USDC
         usdcOracleInstance.setTimestamp(block.timestamp);
@@ -94,7 +94,7 @@ contract UpdateTierConfigTest is BasicDeploy {
         // Update oracle timestamps to be current after any time warping
         wethOracleInstance.setTimestamp(block.timestamp);
         usdcOracleInstance.setTimestamp(block.timestamp);
-        
+
         vm.stopPrank();
     }
 
