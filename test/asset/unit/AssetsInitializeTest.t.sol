@@ -29,7 +29,9 @@ contract AssetsInitializeTest is BasicDeploy {
 
         // Create initialization data
         LendefiPoRFeed porFeedImpl = new LendefiPoRFeed();
-        initData = abi.encodeCall(LendefiAssets.initialize, (timelockAddr, gnosisSafe, address(usdcInstance), address(porFeedImpl)));
+        initData = abi.encodeCall(
+            LendefiAssets.initialize, (timelockAddr, gnosisSafe, address(usdcInstance), address(porFeedImpl))
+        );
     }
 
     function test_InitializeSuccess() public {
@@ -75,7 +77,7 @@ contract AssetsInitializeTest is BasicDeploy {
         LendefiAssets assetsModule = LendefiAssets(payable(address(proxy)));
 
         LendefiPoRFeed porFeedImpl = new LendefiPoRFeed();
-        
+
         // Test with zero address for timelock
         vm.expectRevert(abi.encodeWithSignature("ZeroAddressNotAllowed()"));
         assetsModule.initialize(address(0), gnosisSafe, address(usdcInstance), address(porFeedImpl));
