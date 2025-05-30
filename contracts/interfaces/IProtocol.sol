@@ -433,8 +433,16 @@ interface IPROTOCOL {
      * @param asset The address of the collateral asset
      * @param amount The amount of collateral to withdraw
      * @param positionId The ID of the position
+     * @param expectedCreditLimit Expected credit limit (MEV protection)
+     * @param maxSlippageBps Maximum allowed slippage in basis points
      */
-    function withdrawCollateral(address asset, uint256 amount, uint256 positionId) external;
+    function withdrawCollateral(
+        address asset,
+        uint256 amount,
+        uint256 positionId,
+        uint256 expectedCreditLimit,
+        uint32 maxSlippageBps
+    ) external;
 
     /**
      * @notice Borrows base asset against a position
