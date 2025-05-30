@@ -410,7 +410,7 @@ interface IPROTOCOL {
      * @param asset The collateral asset for the position
      * @param isIsolated Whether to create an isolated position
      */
-    function createPosition(address asset, bool isIsolated) external;
+    function createPosition(address asset, bool isIsolated) external returns (uint256 positionId);
 
     /**
      * @notice Closes a position by repaying all debt and withdrawing all collateral
