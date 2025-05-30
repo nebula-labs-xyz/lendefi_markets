@@ -327,8 +327,6 @@ contract LendefiCore is
     function depositLiquidity(uint256 amount, uint256 expectedShares, uint32 maxSlippageBps)
         external
         validAmount(amount)
-        validAmount(expectedShares)
-        validAmount(maxSlippageBps)
         nonReentrant
         whenNotPaused
     {
@@ -363,8 +361,6 @@ contract LendefiCore is
     function mintShares(uint256 shares, uint256 expectedAmount, uint32 maxSlippageBps)
         external
         validAmount(shares)
-        validAmount(expectedAmount)
-        validAmount(maxSlippageBps)
         nonReentrant
         whenNotPaused
     {
@@ -390,8 +386,6 @@ contract LendefiCore is
     function redeemLiquidityShares(uint256 shares, uint256 expectedAmount, uint32 maxSlippageBps)
         external
         validAmount(shares)
-        validAmount(expectedAmount)
-        validAmount(maxSlippageBps)
         nonReentrant
         whenNotPaused
     {
@@ -418,8 +412,6 @@ contract LendefiCore is
     function withdrawLiquidity(uint256 amount, uint256 expectedShares, uint32 maxSlippageBps)
         external
         validAmount(amount)
-        validAmount(expectedShares)
-        validAmount(maxSlippageBps)
         nonReentrant
         whenNotPaused
     {
@@ -1386,11 +1378,15 @@ contract LendefiCore is
      * @param expectedAmount The expected amount from the user
      * @param maxSlippageBps Maximum allowed slippage in basis points
      */
-    function _validateSlippage(uint256 actualAmount, uint256 expectedAmount, uint32 maxSlippageBps) internal pure {
-        if (expectedAmount > 0) {
-            uint256 deviation =
-                actualAmount > expectedAmount ? actualAmount - expectedAmount : expectedAmount - actualAmount;
-            if (deviation * 10000 > expectedAmount * maxSlippageBps) revert MEVSlippageExceeded();
-        }
+    function _validateSlippage(uint256 actualAmount, uint256 expectedAmount, uint32 maxSlippageBps) 
+        internal 
+        pure 
+        validAmount(actualAmount)
+        validAmount(expectedAmount)
+        validAmount(maxSlippageBps)
+    {
+        uint256 deviation =
+            actualAmount > expectedAmount ? actualAmount - expectedAmount : expectedAmount - actualAmount;
+        if (deviation * 10000 > expectedAmount * maxSlippageBps) revert MEVSlippageExceeded();
     }
 }
