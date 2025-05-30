@@ -695,7 +695,9 @@ contract BasicDeploy is Test {
         // Assert that upgrade was successful
         assertEq(marketFactoryInstanceV2.version(), 2, "Version not incremented to 2");
         assertFalse(implAddressV2 == implAddressV1, "Implementation address didn't change");
-        assertTrue(marketFactoryInstanceV2.hasRole(DEFAULT_ADMIN_ROLE, address(timelockInstance)), "Lost DEFAULT_ADMIN_ROLE");
+        assertTrue(
+            marketFactoryInstanceV2.hasRole(DEFAULT_ADMIN_ROLE, address(timelockInstance)), "Lost DEFAULT_ADMIN_ROLE"
+        );
 
         // Test role management still works - timelock should have admin control
         vm.startPrank(address(timelockInstance));
