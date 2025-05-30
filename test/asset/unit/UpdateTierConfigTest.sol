@@ -276,7 +276,7 @@ contract UpdateTierConfigTest is BasicDeploy {
 
         // STEP 5: Borrow to create protocol utilization
         uint256 creditLimit = marketCoreInstance.calculateCreditLimit(bob, 0);
-        marketCoreInstance.borrow(0, 40_000e6, creditLimit, 0);
+        marketCoreInstance.borrow(0, 40_000e6, creditLimit, 100);
         vm.stopPrank();
 
         // STEP 6: Verify non-zero utilization
