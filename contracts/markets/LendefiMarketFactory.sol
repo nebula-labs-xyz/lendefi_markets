@@ -31,11 +31,21 @@ import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/acce
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {IPoRFeed} from "../interfaces/IPoRFeed.sol";
+import {LendefiConstants} from "./lib/LendefiConstants.sol";
 
 /// @custom:oz-upgrades
 contract LendefiMarketFactory is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
     using Clones for address;
+    using LendefiConstants for *;
 
+    /**
+     * @notice Information about a scheduled contract upgrade
+     */
+    struct UpgradeRequest {
+        address implementation;
+        uint64 scheduledTime;
+        bool exists;
+    }
     // ========== STATE VARIABLES ==========
 
     /// @notice Version of the factory contract
@@ -88,7 +98,11 @@ contract LendefiMarketFactory is Initializable, AccessControlUpgradeable, UUPSUp
     /// @notice Array of all market configurations created by this factory
     /// @dev Provides direct access to market data without mapping lookups
     IPROTOCOL.Market[] public allMarkets;
+    /// @dev Pending upgrade information
+    UpgradeRequest public pendingUpgrade;
 
+    // Storage gap reduced to account for new pendingUpgrade variable
+    uint256[16] private __gap;
     // ========== EVENTS ==========
 
     /**
@@ -134,6 +148,27 @@ contract LendefiMarketFactory is Initializable, AccessControlUpgradeable, UUPSUp
         address indexed positionVaultImplementation
     );
 
+    /**
+     * @notice Emitted when implementation contract is upgraded
+     * @param admin Address of the admin who performed the upgrade
+     * @param implementation Address of the new implementation
+     */
+    event Upgrade(address indexed admin, address indexed implementation);
+
+    /// @notice Emitted when an upgrade is scheduled
+    /// @param scheduler The address scheduling the upgrade
+    /// @param implementation The new implementation contract address
+    /// @param scheduledTime The timestamp when the upgrade was scheduled
+    /// @param effectiveTime The timestamp when the upgrade can be executed
+    event UpgradeScheduled(
+        address indexed scheduler, address indexed implementation, uint64 scheduledTime, uint64 effectiveTime
+    );
+
+    /// @notice Emitted when a scheduled upgrade is cancelled
+    /// @param canceller The address that cancelled the upgrade
+    /// @param implementation The implementation address that was cancelled
+    event UpgradeCancelled(address indexed canceller, address indexed implementation);
+
     // ========== ERRORS ==========
 
     /// @notice Thrown when attempting to create a market for an asset that already has one
@@ -150,6 +185,18 @@ contract LendefiMarketFactory is Initializable, AccessControlUpgradeable, UUPSUp
 
     /// @notice Thrown when an invalid contract address is provided
     error InvalidContract();
+
+    /// @notice Thrown when attempting to execute an upgrade before timelock expires
+    /// @param timeRemaining The time remaining until the upgrade can be executed
+    error UpgradeTimelockActive(uint256 timeRemaining);
+
+    /// @notice Thrown when attempting to execute an upgrade that wasn't scheduled
+    error UpgradeNotScheduled();
+
+    /// @notice Thrown when implementation address doesn't match scheduled upgrade
+    /// @param scheduledImpl The address that was scheduled for upgrade
+    /// @param attemptedImpl The address that was attempted to be used
+    error ImplementationMismatch(address scheduledImpl, address attemptedImpl);
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -201,6 +248,7 @@ contract LendefiMarketFactory is Initializable, AccessControlUpgradeable, UUPSUp
         __UUPSUpgradeable_init();
 
         _grantRole(DEFAULT_ADMIN_ROLE, _timelock);
+        _grantRole(LendefiConstants.UPGRADER_ROLE, _timelock);
 
         treasury = _treasury;
         assetsModule = _assetsModule;
@@ -321,7 +369,8 @@ contract LendefiMarketFactory is Initializable, AccessControlUpgradeable, UUPSUp
 
         // Initialize vault contract through proxy
         bytes memory vaultData = abi.encodeCall(
-            LendefiMarketVault.initialize, (timelock, address(coreInstance), baseAsset, ecosystem, assetsModule, name, symbol)
+            LendefiMarketVault.initialize,
+            (timelock, address(coreInstance), baseAsset, ecosystem, assetsModule, name, symbol)
         );
         ERC1967Proxy vaultProxy = new ERC1967Proxy(address(baseVault), vaultData);
         LendefiMarketVault vaultInstance = LendefiMarketVault(payable(address(vaultProxy)));
@@ -364,6 +413,47 @@ contract LendefiMarketFactory is Initializable, AccessControlUpgradeable, UUPSUp
             marketInfo.symbol,
             marketInfo.porFeed
         );
+    }
+
+    /**
+     * @notice Schedules an upgrade to a new implementation with timelock
+     * @dev Only callable by addresses with LendefiConstants.UPGRADER_ROLE
+     * @param newImplementation Address of the new implementation contract
+     */
+    function scheduleUpgrade(address newImplementation) external onlyRole(LendefiConstants.UPGRADER_ROLE) {
+        if (newImplementation == address(0)) revert ZeroAddress();
+
+        uint64 currentTime = uint64(block.timestamp);
+        uint64 effectiveTime = currentTime + uint64(LendefiConstants.UPGRADE_TIMELOCK_DURATION);
+
+        pendingUpgrade = UpgradeRequest({implementation: newImplementation, scheduledTime: currentTime, exists: true});
+
+        emit UpgradeScheduled(msg.sender, newImplementation, currentTime, effectiveTime);
+    }
+
+    /**
+     * @notice Cancels a previously scheduled upgrade
+     * @dev Only callable by addresses with LendefiConstants.UPGRADER_ROLE
+     */
+    function cancelUpgrade() external onlyRole(LendefiConstants.UPGRADER_ROLE) {
+        if (!pendingUpgrade.exists) {
+            revert UpgradeNotScheduled();
+        }
+        address implementation = pendingUpgrade.implementation;
+        delete pendingUpgrade;
+        emit UpgradeCancelled(msg.sender, implementation);
+    }
+
+    /**
+     * @notice Returns the remaining time before a scheduled upgrade can be executed
+     * @dev Returns 0 if no upgrade is scheduled or if the timelock has expired
+     * @return timeRemaining The time remaining in seconds
+     */
+    function upgradeTimelockRemaining() external view returns (uint256) {
+        return pendingUpgrade.exists
+            && block.timestamp < pendingUpgrade.scheduledTime + LendefiConstants.UPGRADE_TIMELOCK_DURATION
+            ? pendingUpgrade.scheduledTime + LendefiConstants.UPGRADE_TIMELOCK_DURATION - block.timestamp
+            : 0;
     }
 
     /**
@@ -435,15 +525,28 @@ contract LendefiMarketFactory is Initializable, AccessControlUpgradeable, UUPSUp
     // ========== UUPS UPGRADE AUTHORIZATION ==========
 
     /**
-     * @notice Authorizes contract upgrades through the UUPS proxy pattern
-     * @dev Internal function called by the UUPS upgrade mechanism to verify
-     *      that the caller has permission to upgrade the contract implementation.
-     *      Only addresses with DEFAULT_ADMIN_ROLE can authorize upgrades.
-     *
-     * @custom:access-control Restricted to DEFAULT_ADMIN_ROLE
-     * @custom:upgrade-safety This function ensures only authorized parties can upgrade the factory
+     * @notice Authorizes an upgrade to a new implementation
+     * @dev Implements the upgrade verification and authorization logic
+     * @param newImplementation Address of new implementation contract
      */
-    function _authorizeUpgrade(address) internal override onlyRole(DEFAULT_ADMIN_ROLE) {
-        version++;
+    function _authorizeUpgrade(address newImplementation) internal override onlyRole(LendefiConstants.UPGRADER_ROLE) {
+        if (!pendingUpgrade.exists) {
+            revert UpgradeNotScheduled();
+        }
+
+        if (pendingUpgrade.implementation != newImplementation) {
+            revert ImplementationMismatch(pendingUpgrade.implementation, newImplementation);
+        }
+
+        uint256 timeElapsed = block.timestamp - pendingUpgrade.scheduledTime;
+        if (timeElapsed < LendefiConstants.UPGRADE_TIMELOCK_DURATION) {
+            revert UpgradeTimelockActive(LendefiConstants.UPGRADE_TIMELOCK_DURATION - timeElapsed);
+        }
+
+        // Clear the scheduled upgrade
+        delete pendingUpgrade;
+
+        ++version;
+        emit Upgrade(msg.sender, newImplementation);
     }
 }
