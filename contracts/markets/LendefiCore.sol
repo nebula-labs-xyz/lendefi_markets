@@ -364,17 +364,19 @@ contract LendefiCore is
         nonReentrant
         whenNotPaused
     {
+        address cachedBaseAsset = baseAsset;
+        ILendefiMarketVault cachedBaseVault = baseVault;
         // Calculate required assets for minting shares
-        uint256 assets = baseVault.previewMint(shares);
+        uint256 assets = cachedBaseVault.previewMint(shares);
 
         // Transfer tokens from user to this contract
-        IERC20(baseAsset).safeTransferFrom(msg.sender, address(this), assets);
+        IERC20(cachedBaseAsset).safeTransferFrom(msg.sender, address(this), assets);
 
         // Approve vault to spend tokens
-        IERC20(baseAsset).forceApprove(address(baseVault), assets);
+        IERC20(cachedBaseAsset).forceApprove(address(cachedBaseVault), assets);
 
         // Mint shares from vault
-        uint256 actualAmount = baseVault.mint(shares, msg.sender);
+        uint256 actualAmount = cachedBaseVault.mint(shares, msg.sender);
         _validateSlippage(actualAmount, expectedAmount, maxSlippageBps);
         emit MintShares(msg.sender, shares);
     }
