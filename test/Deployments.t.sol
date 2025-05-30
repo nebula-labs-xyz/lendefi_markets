@@ -184,4 +184,8 @@ contract BasicDeployTest is BasicDeploy {
         deployCompleteWithOracle();
         deployMarketFactoryUpgrade();
     }
+
+    function test_018_deployLendefiCoreUpgrade() public {
+        deployLendefiCoreUpgrade();
+    }
 }
