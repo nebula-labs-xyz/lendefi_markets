@@ -11,6 +11,7 @@ import {LendefiMarketFactory} from "../../contracts/markets/LendefiMarketFactory
 import {LendefiPositionVault} from "../../contracts/markets/LendefiPositionVault.sol";
 import {WETH9} from "../../contracts/vendor/canonical-weth/contracts/WETH9.sol";
 import {WETHPriceConsumerV3} from "../../contracts/mock/WETHOracle.sol";
+import {LendefiConstants} from "../../contracts/markets/lib/LendefiConstants.sol";
 
 contract LendefiMarketFactoryTest is BasicDeploy {
     // Additional test tokens
@@ -332,21 +333,181 @@ contract LendefiMarketFactoryTest is BasicDeploy {
 
     // ============ Upgrade Tests ============
 
-    function test_FactoryUpgrade() public {
+    function testRevert_FactoryUpgrade() public {
         // Deploy new implementation
         LendefiMarketFactory newImpl = new LendefiMarketFactory();
-
         // Upgrade should only work from timelock
+        vm.expectRevert(
+            abi.encodeWithSignature(
+                "AccessControlUnauthorizedAccount(address,bytes32)", alice, LendefiConstants.UPGRADER_ROLE
+            )
+        );
         vm.prank(alice);
-        vm.expectRevert();
         marketFactoryInstance.upgradeToAndCall(address(newImpl), "");
 
         // Upgrade from timelock
         vm.prank(address(timelockInstance));
+        vm.expectRevert(abi.encodeWithSignature("UpgradeNotScheduled()"));
         marketFactoryInstance.upgradeToAndCall(address(newImpl), "");
-
-        // Verify state is preserved
-        assertEq(marketFactoryInstance.treasury(), address(treasuryInstance));
-        assertTrue(marketFactoryInstance.isMarketActive(address(usdcInstance)));
     }
+
+    function test_CancelUpgrade() public {
+        // Deploy new implementation
+        LendefiMarketFactory newImpl = new LendefiMarketFactory();
+        
+        // Schedule an upgrade first
+        vm.prank(address(timelockInstance));
+        marketFactoryInstance.scheduleUpgrade(address(newImpl));
+        
+        // Verify upgrade is scheduled
+        (address impl, uint64 scheduledTime, bool exists) = marketFactoryInstance.pendingUpgrade();
+        assertTrue(exists, "Upgrade should be scheduled");
+        assertEq(impl, address(newImpl), "Implementation should match");
+        
+        // Cancel the upgrade
+        vm.prank(address(timelockInstance));
+        vm.expectEmit(true, true, false, true);
+        emit UpgradeCancelled(address(timelockInstance), address(newImpl));
+        marketFactoryInstance.cancelUpgrade();
+        
+        // Verify upgrade is cancelled
+        (address implAfter, uint64 scheduledTimeAfter, bool existsAfter) = marketFactoryInstance.pendingUpgrade();
+        assertFalse(existsAfter, "Upgrade should be cancelled");
+        assertEq(implAfter, address(0), "Implementation should be cleared");
+    }
+
+    function test_Revert_CancelUpgrade_NotScheduled() public {
+        // Try to cancel when no upgrade is scheduled
+        vm.prank(address(timelockInstance));
+        vm.expectRevert(abi.encodeWithSignature("UpgradeNotScheduled()"));
+        marketFactoryInstance.cancelUpgrade();
+    }
+
+    function test_Revert_CancelUpgrade_Unauthorized() public {
+        // Deploy new implementation and schedule upgrade
+        LendefiMarketFactory newImpl = new LendefiMarketFactory();
+        vm.prank(address(timelockInstance));
+        marketFactoryInstance.scheduleUpgrade(address(newImpl));
+        
+        // Try to cancel from unauthorized account
+        vm.expectRevert(
+            abi.encodeWithSignature(
+                "AccessControlUnauthorizedAccount(address,bytes32)", alice, LendefiConstants.UPGRADER_ROLE
+            )
+        );
+        vm.prank(alice);
+        marketFactoryInstance.cancelUpgrade();
+    }
+
+    function test_UpgradeTimelockRemaining() public {
+        // No upgrade scheduled - should return 0
+        assertEq(marketFactoryInstance.upgradeTimelockRemaining(), 0, "Should return 0 when no upgrade scheduled");
+        
+        // Deploy new implementation and schedule upgrade
+        LendefiMarketFactory newImpl = new LendefiMarketFactory();
+        uint256 scheduleTime = block.timestamp;
+        
+        vm.prank(address(timelockInstance));
+        marketFactoryInstance.scheduleUpgrade(address(newImpl));
+        
+        // Should return the full timelock duration immediately after scheduling
+        uint256 expectedRemaining = LendefiConstants.UPGRADE_TIMELOCK_DURATION;
+        assertEq(marketFactoryInstance.upgradeTimelockRemaining(), expectedRemaining, "Should return full timelock duration");
+        
+        // Fast forward 1 day
+        vm.warp(block.timestamp + 1 days);
+        expectedRemaining = LendefiConstants.UPGRADE_TIMELOCK_DURATION - 1 days;
+        assertEq(marketFactoryInstance.upgradeTimelockRemaining(), expectedRemaining, "Should return remaining time after 1 day");
+        
+        // Fast forward 2 more days (total 3 days = full timelock period)
+        vm.warp(scheduleTime + LendefiConstants.UPGRADE_TIMELOCK_DURATION);
+        assertEq(marketFactoryInstance.upgradeTimelockRemaining(), 0, "Should return 0 when timelock expires");
+        
+        // Fast forward past expiration
+        vm.warp(scheduleTime + LendefiConstants.UPGRADE_TIMELOCK_DURATION + 1 hours);
+        assertEq(marketFactoryInstance.upgradeTimelockRemaining(), 0, "Should return 0 after timelock expires");
+    }
+
+    function test_UpgradeTimelockRemaining_AfterCancel() public {
+        // Deploy new implementation and schedule upgrade
+        LendefiMarketFactory newImpl = new LendefiMarketFactory();
+        
+        vm.prank(address(timelockInstance));
+        marketFactoryInstance.scheduleUpgrade(address(newImpl));
+        
+        // Verify timelock is active
+        assertGt(marketFactoryInstance.upgradeTimelockRemaining(), 0, "Should have remaining time");
+        
+        // Cancel the upgrade
+        vm.prank(address(timelockInstance));
+        marketFactoryInstance.cancelUpgrade();
+        
+        // Should return 0 after cancellation
+        assertEq(marketFactoryInstance.upgradeTimelockRemaining(), 0, "Should return 0 after cancellation");
+    }
+
+    function test_Revert_SetImplementations_ZeroAddress() public {
+        // Test zero core implementation
+        vm.prank(address(timelockInstance));
+        vm.expectRevert(abi.encodeWithSignature("ZeroAddress()"));
+        marketFactoryInstance.setImplementations(address(0), address(0x1), address(0x2));
+        
+        // Test zero vault implementation
+        vm.prank(address(timelockInstance));
+        vm.expectRevert(abi.encodeWithSignature("ZeroAddress()"));
+        marketFactoryInstance.setImplementations(address(0x1), address(0), address(0x2));
+        
+        // Test zero position vault implementation
+        vm.prank(address(timelockInstance));
+        vm.expectRevert(abi.encodeWithSignature("ZeroAddress()"));
+        marketFactoryInstance.setImplementations(address(0x1), address(0x2), address(0));
+    }
+
+    function test_Revert_AuthorizeUpgrade_ImplementationMismatch() public {
+        // Deploy two different implementations
+        LendefiMarketFactory newImpl1 = new LendefiMarketFactory();
+        LendefiMarketFactory newImpl2 = new LendefiMarketFactory();
+        
+        // Schedule upgrade with first implementation
+        vm.prank(address(timelockInstance));
+        marketFactoryInstance.scheduleUpgrade(address(newImpl1));
+        
+        // Fast forward past timelock
+        vm.warp(block.timestamp + LendefiConstants.UPGRADE_TIMELOCK_DURATION + 1);
+        
+        // Try to upgrade with different implementation
+        vm.prank(address(timelockInstance));
+        vm.expectRevert(
+            abi.encodeWithSignature("ImplementationMismatch(address,address)", address(newImpl1), address(newImpl2))
+        );
+        marketFactoryInstance.upgradeToAndCall(address(newImpl2), "");
+    }
+
+    function test_Revert_AuthorizeUpgrade_TimelockActive() public {
+        // Deploy new implementation
+        LendefiMarketFactory newImpl = new LendefiMarketFactory();
+        
+        // Schedule upgrade
+        vm.prank(address(timelockInstance));
+        marketFactoryInstance.scheduleUpgrade(address(newImpl));
+        
+        // Try to upgrade immediately (before timelock expires)
+        vm.prank(address(timelockInstance));
+        vm.expectRevert(
+            abi.encodeWithSignature("UpgradeTimelockActive(uint256)", LendefiConstants.UPGRADE_TIMELOCK_DURATION)
+        );
+        marketFactoryInstance.upgradeToAndCall(address(newImpl), "");
+        
+        // Fast forward 1 day (still within timelock)
+        vm.warp(block.timestamp + 1 days);
+        
+        vm.prank(address(timelockInstance));
+        vm.expectRevert(
+            abi.encodeWithSignature("UpgradeTimelockActive(uint256)", LendefiConstants.UPGRADE_TIMELOCK_DURATION - 1 days)
+        );
+        marketFactoryInstance.upgradeToAndCall(address(newImpl), "");
+    }
+
+    // Add missing events
+    event UpgradeCancelled(address indexed canceller, address indexed implementation);
 }
