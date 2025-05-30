@@ -868,8 +868,9 @@ contract LendefiAssetsTest is BasicDeploy {
 
         // Create initialization data
         LendefiPoRFeed porFeedImpl = new LendefiPoRFeed();
-        bytes memory initData =
-            abi.encodeCall(LendefiAssets.initialize, (timelockAddr, gnosisSafe, address(usdcInstance), address(porFeedImpl)));
+        bytes memory initData = abi.encodeCall(
+            LendefiAssets.initialize, (timelockAddr, gnosisSafe, address(usdcInstance), address(porFeedImpl))
+        );
         // Deploy LendefiAssets with initialization
         address payable proxy = payable(Upgrades.deployUUPSProxy("LendefiAssets.sol", initData));
         LendefiAssets assetsContract = LendefiAssets(proxy);
