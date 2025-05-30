@@ -553,7 +553,7 @@ contract LendefiAssetsV2 is
         price = getAssetPrice(asset);
 
         // Get total supplied from protocol
-        totalSupplied = lendefiInstance.assetTVL(asset);
+        (totalSupplied,,) = lendefiInstance.getAssetTVL(asset);
     }
 
     /**
@@ -595,13 +595,14 @@ contract LendefiAssetsV2 is
     /**
      * @notice Checks if supplying an amount would exceed asset capacity
      * @param asset The asset address to check
-     * @param amount The amount to be supplied
+     * @param additionalAmount The amount to be supplied
+     * @param tvl Current total value locked for the asset
      * @return true if supply would exceed maximum threshold
      * @custom:validation Asset must be listed
      */
-    function isAssetAtCapacity(address asset, uint256 amount) external view onlyListedAsset(asset) returns (bool) {
+    function isAssetAtCapacity(address asset, uint256 additionalAmount, uint256 tvl) external view onlyListedAsset(asset) returns (bool) {
         // Check standard supply cap
-        if (lendefiInstance.assetTVL(asset) + amount > assetInfo[asset].maxSupplyThreshold) {
+        if (tvl + additionalAmount > assetInfo[asset].maxSupplyThreshold) {
             return true;
         }
 
