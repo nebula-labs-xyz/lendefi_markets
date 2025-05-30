@@ -112,7 +112,7 @@ contract MarketFactoryTest is BasicDeploy {
     function test_Revert_Initialize_ZeroTimelock() public {
         LendefiPoRFeed porFeedImpl = new LendefiPoRFeed();
         LendefiMarketFactory factoryImpl = new LendefiMarketFactory();
-        
+
         // Try to deploy proxy with zero timelock in init data
         bytes memory initData = abi.encodeWithSelector(
             LendefiMarketFactory.initialize.selector,
@@ -123,7 +123,7 @@ contract MarketFactoryTest is BasicDeploy {
             address(porFeedImpl),
             address(ecoInstance)
         );
-        
+
         vm.expectRevert(abi.encodeWithSignature("ZeroAddress()"));
         new ERC1967Proxy(address(factoryImpl), initData);
     }
@@ -131,7 +131,7 @@ contract MarketFactoryTest is BasicDeploy {
     function test_Revert_Initialize_ZeroTreasury() public {
         LendefiPoRFeed porFeedImpl = new LendefiPoRFeed();
         LendefiMarketFactory factoryImpl = new LendefiMarketFactory();
-        
+
         bytes memory initData = abi.encodeWithSelector(
             LendefiMarketFactory.initialize.selector,
             address(timelockInstance),
@@ -141,7 +141,7 @@ contract MarketFactoryTest is BasicDeploy {
             address(porFeedImpl),
             address(ecoInstance)
         );
-        
+
         vm.expectRevert(abi.encodeWithSignature("ZeroAddress()"));
         new ERC1967Proxy(address(factoryImpl), initData);
     }
@@ -149,7 +149,7 @@ contract MarketFactoryTest is BasicDeploy {
     function test_Revert_Initialize_ZeroAssetsModule() public {
         LendefiPoRFeed porFeedImpl = new LendefiPoRFeed();
         LendefiMarketFactory factoryImpl = new LendefiMarketFactory();
-        
+
         bytes memory initData = abi.encodeWithSelector(
             LendefiMarketFactory.initialize.selector,
             address(timelockInstance),
@@ -159,7 +159,7 @@ contract MarketFactoryTest is BasicDeploy {
             address(porFeedImpl),
             address(ecoInstance)
         );
-        
+
         vm.expectRevert(abi.encodeWithSignature("ZeroAddress()"));
         new ERC1967Proxy(address(factoryImpl), initData);
     }
@@ -167,7 +167,7 @@ contract MarketFactoryTest is BasicDeploy {
     function test_Revert_Initialize_ZeroGovToken() public {
         LendefiPoRFeed porFeedImpl = new LendefiPoRFeed();
         LendefiMarketFactory factoryImpl = new LendefiMarketFactory();
-        
+
         bytes memory initData = abi.encodeWithSelector(
             LendefiMarketFactory.initialize.selector,
             address(timelockInstance),
@@ -177,14 +177,14 @@ contract MarketFactoryTest is BasicDeploy {
             address(porFeedImpl),
             address(ecoInstance)
         );
-        
+
         vm.expectRevert(abi.encodeWithSignature("ZeroAddress()"));
         new ERC1967Proxy(address(factoryImpl), initData);
     }
 
     function test_Revert_Initialize_ZeroPoRFeed() public {
         LendefiMarketFactory factoryImpl = new LendefiMarketFactory();
-        
+
         bytes memory initData = abi.encodeWithSelector(
             LendefiMarketFactory.initialize.selector,
             address(timelockInstance),
@@ -194,7 +194,7 @@ contract MarketFactoryTest is BasicDeploy {
             address(0), // zero PoR feed
             address(ecoInstance)
         );
-        
+
         vm.expectRevert(abi.encodeWithSignature("ZeroAddress()"));
         new ERC1967Proxy(address(factoryImpl), initData);
     }
@@ -202,7 +202,7 @@ contract MarketFactoryTest is BasicDeploy {
     function test_Revert_Initialize_ZeroEcosystem() public {
         LendefiPoRFeed porFeedImpl = new LendefiPoRFeed();
         LendefiMarketFactory factoryImpl = new LendefiMarketFactory();
-        
+
         bytes memory initData = abi.encodeWithSelector(
             LendefiMarketFactory.initialize.selector,
             address(timelockInstance),
@@ -212,7 +212,7 @@ contract MarketFactoryTest is BasicDeploy {
             address(porFeedImpl),
             address(0) // zero ecosystem
         );
-        
+
         vm.expectRevert(abi.encodeWithSignature("ZeroAddress()"));
         new ERC1967Proxy(address(factoryImpl), initData);
     }
