@@ -514,9 +514,10 @@ interface IASSETS {
      * @notice Check if adding more supply would exceed an asset's capacity
      * @param asset The asset to check
      * @param additionalAmount The additional amount to supply
+     * @param tvl The total value locked for the asset
      * @return Whether the asset would be at capacity after adding the amount
      */
-    function isAssetAtCapacity(address asset, uint256 additionalAmount) external view returns (bool);
+    function isAssetAtCapacity(address asset, uint256 additionalAmount, uint256 tvl) external view returns (bool);
 
     /**
      * @notice Get full asset configuration
