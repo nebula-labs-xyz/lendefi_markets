@@ -19,7 +19,7 @@ contract LendefiCoreAdditionalCoverageTest is BasicDeploy {
     MockPriceOracle internal wethOracleInstance;
     MockPriceOracle internal rwaOracleInstance;
     TokenMock internal rwaToken;
-    
+
     // Test constants
     uint256 constant INITIAL_LIQUIDITY = 1_000_000e6; // 1M USDC
     uint256 constant ETH_PRICE = 2500e8;
@@ -32,13 +32,13 @@ contract LendefiCoreAdditionalCoverageTest is BasicDeploy {
         usdcOracleInstance.setTimestamp(block.timestamp);
         usdcOracleInstance.setRoundId(1);
         usdcOracleInstance.setAnsweredInRound(1);
-        
+
         wethOracleInstance = new MockPriceOracle();
         wethOracleInstance.setPrice(int256(ETH_PRICE));
         wethOracleInstance.setTimestamp(block.timestamp);
         wethOracleInstance.setRoundId(1);
         wethOracleInstance.setAnsweredInRound(1);
-        
+
         rwaOracleInstance = new MockPriceOracle();
         rwaOracleInstance.setPrice(int256(RWA_PRICE));
         rwaOracleInstance.setTimestamp(block.timestamp);
@@ -55,7 +55,7 @@ contract LendefiCoreAdditionalCoverageTest is BasicDeploy {
 
         // Configure assets
         vm.startPrank(address(timelockInstance));
-        
+
         // Configure USDC
         assetsInstance.updateAssetConfig(
             address(usdcInstance),
@@ -117,7 +117,7 @@ contract LendefiCoreAdditionalCoverageTest is BasicDeploy {
         usdcOracleInstance.setTimestamp(block.timestamp);
         wethOracleInstance.setTimestamp(block.timestamp);
         rwaOracleInstance.setTimestamp(block.timestamp);
-        
+
         vm.stopPrank();
 
         // Provide initial liquidity
@@ -154,7 +154,7 @@ contract LendefiCoreAdditionalCoverageTest is BasicDeploy {
         // Setup: Create position and supply WETH
         uint256 positionId = _createPosition(bob, address(wethInstance), false);
         uint256 wethAmount = 1 ether;
-        
+
         deal(address(wethInstance), bob, wethAmount);
         _supplyCollateral(bob, positionId, address(wethInstance), wethAmount);
 
@@ -179,10 +179,10 @@ contract LendefiCoreAdditionalCoverageTest is BasicDeploy {
         uint256 positionId = _createPosition(bob, address(wethInstance), false);
         uint256 wethAmount = 1 ether;
         uint256 usdcAmount = 1000e6;
-        
+
         deal(address(wethInstance), bob, wethAmount);
         deal(address(usdcInstance), bob, usdcAmount);
-        
+
         _supplyCollateral(bob, positionId, address(wethInstance), wethAmount);
         _supplyCollateral(bob, positionId, address(usdcInstance), usdcAmount);
 
@@ -193,7 +193,7 @@ contract LendefiCoreAdditionalCoverageTest is BasicDeploy {
         // WETH Value = 1 ETH * $2500 = $2500
         // USDC Value = 1000 USDC = $1000
         // Total Value = $3500 (in 6 decimals = 3500e6)
-        // 
+        //
         // Credit = (WETH: $2500 * 80%) + (USDC: $1000 * 90%) = $2000 + $900 = $2900
         // LiqLevel = (WETH: $2500 * 85%) + (USDC: $1000 * 95%) = $2125 + $950 = $3075
 
@@ -209,7 +209,7 @@ contract LendefiCoreAdditionalCoverageTest is BasicDeploy {
         // Setup: Create isolated position with RWA token
         uint256 positionId = _createPosition(bob, address(rwaToken), true);
         uint256 rwaAmount = 100e18;
-        
+
         rwaToken.mint(bob, rwaAmount);
         _supplyCollateral(bob, positionId, address(rwaToken), rwaAmount);
 
@@ -255,7 +255,7 @@ contract LendefiCoreAdditionalCoverageTest is BasicDeploy {
         // Setup: Create position with large WETH amount
         uint256 positionId = _createPosition(bob, address(wethInstance), false);
         uint256 wethAmount = 1000 ether; // Large amount
-        
+
         deal(address(wethInstance), bob, wethAmount);
         _supplyCollateral(bob, positionId, address(wethInstance), wethAmount);
 
