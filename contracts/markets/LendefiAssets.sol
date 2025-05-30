@@ -546,7 +546,7 @@ contract LendefiAssets is
      * @dev Combines multiple data points into a single view call
      * @param asset The address of the asset to query
      * @return price Current oracle price of the asset
-     * @return totalSupplied Total amount of asset supplied to protocol
+     * @return tvl Total value locked for the asset
      * @return maxSupply Maximum supply threshold for the asset
      * @return tier Collateral tier classification
      * @custom:validation Asset must be listed
@@ -555,7 +555,7 @@ contract LendefiAssets is
         external
         view
         onlyListedAsset(asset)
-        returns (uint256 price, uint256 totalSupplied, uint256 maxSupply, CollateralTier tier)
+        returns (uint256 price, uint256 tvl, uint256 maxSupply, CollateralTier tier)
     {
         // Direct storage access instead of copying entire struct
         maxSupply = assetInfo[asset].maxSupplyThreshold;
@@ -565,7 +565,7 @@ contract LendefiAssets is
         price = getAssetPrice(asset);
 
         // Get total supplied from protocol
-        totalSupplied = lendefiInstance.assetTVL(asset);
+        (tvl,,) = lendefiInstance.getAssetTVL(asset);
     }
 
     /**
@@ -608,12 +608,18 @@ contract LendefiAssets is
      * @notice Checks if supplying an amount would exceed asset capacity
      * @param asset The asset address to check
      * @param amount The amount to be supplied
+     * @param tvl The total value locked for the asset
      * @return true if supply would exceed maximum threshold
      * @custom:validation Asset must be listed
      */
-    function isAssetAtCapacity(address asset, uint256 amount) external view onlyListedAsset(asset) returns (bool) {
+    function isAssetAtCapacity(address asset, uint256 amount, uint256 tvl)
+        external
+        view
+        onlyListedAsset(asset)
+        returns (bool)
+    {
         // Check standard supply cap
-        if (lendefiInstance.assetTVL(asset) + amount > assetInfo[asset].maxSupplyThreshold) {
+        if (tvl + amount > assetInfo[asset].maxSupplyThreshold) {
             return true;
         }
 
