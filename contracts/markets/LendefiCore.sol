@@ -271,7 +271,7 @@ contract LendefiCore is
         if (config.profitTargetRate < 0.0025e6) revert InvalidProfitTarget();
         if (config.borrowRate < 0.01e6) revert InvalidBorrowRate();
         if (config.rewardAmount > 10_000 ether) revert InvalidRewardAmount();
-        if (config.rewardInterval < 90 days) revert InvalidInterval();
+        if (config.rewardInterval < 90 * 24 * 60 * 5) revert InvalidInterval(); // 90 days in blocks (5 blocks per minute)
         if (config.rewardableSupply < 20_000 * baseDecimals) revert InvalidSupplyAmount();
         if (config.liquidatorThreshold < 10 ether) revert InvalidLiquidatorThreshold();
         if (config.flashLoanFee > 100 || config.flashLoanFee < 1) revert InvalidFee();
