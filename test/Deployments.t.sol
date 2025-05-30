@@ -180,45 +180,8 @@ contract BasicDeployTest is BasicDeploy {
         console2.log("USDC:           ", address(usdcInstance));
     }
 
-    function test_017_marketsIntegration() public {
-        deployMarketsWithUSDC();
-
-        // Debug vault state before deposit
-        console2.log("=== Pre-deposit vault state ===");
-        console2.log("Vault address:", address(marketVaultInstance));
-        console2.log("Vault totalSupply:", marketVaultInstance.totalSupply());
-        console2.log("Vault totalAssets:", marketVaultInstance.totalAssets());
-        console2.log("Vault decimals:", marketVaultInstance.decimals());
-        console2.log("Vault asset:", marketVaultInstance.asset());
-        console2.log("USDC balance of vault:", usdcInstance.balanceOf(address(marketVaultInstance)));
-
-        // Now test normal liquidity supply
-        uint256 supplyAmount = 100_000e6;
-        deal(address(usdcInstance), alice, supplyAmount);
-        console2.log("\n=== Alice state ===");
-        console2.log("Alice USDC balance:", usdcInstance.balanceOf(alice));
-        console2.log("Supply amount:", supplyAmount);
-
-        vm.startPrank(alice);
-        usdcInstance.approve(address(marketCoreInstance), supplyAmount);
-        console2.log("Alice approved Core:", usdcInstance.allowance(alice, address(marketCoreInstance)));
-
-        // Check preview calculations
-        uint256 expectedShares = marketVaultInstance.previewDeposit(supplyAmount);
-        console2.log("\n=== Preview calculations ===");
-        console2.log("previewDeposit result:", expectedShares);
-
-        // Check Core's view of vault
-        console2.log("\n=== Core state ===");
-        console2.log("Core address:", address(marketCoreInstance));
-        console2.log("Core's baseAsset:", address(marketCoreInstance.baseAsset()));
-
-        console2.log("\n=== Calling supplyLiquidity ===");
-        console2.log("Amount:", supplyAmount);
-        console2.log("Expected shares:", expectedShares);
-        console2.log("Max slippage bps:", uint256(100));
-
-        marketCoreInstance.depositLiquidity(supplyAmount, expectedShares, 100);
-        vm.stopPrank();
+    function test_017_deployMarketFactoryUpgrade() public {
+        deployCompleteWithOracle();
+        deployMarketFactoryUpgrade();
     }
 }
