@@ -786,13 +786,9 @@ contract LendefiCoreTest is BasicDeploy {
 
         vm.startPrank(charlie);
         // Core contract needs to approve vault to spend tokens for mint operation
-        vm.stopPrank();
-
-        vm.prank(address(marketCoreInstance));
-        usdcInstance.approve(address(marketVaultInstance), expectedAmount);
-
-        vm.prank(charlie);
+        usdcInstance.approve(address(marketCoreInstance), expectedAmount);
         marketCoreInstance.mintShares(sharesToMint, expectedAmount, 100);
+        vm.stopPrank();
 
         assertEq(marketVaultInstance.balanceOf(charlie), sharesBefore + sharesToMint);
     }
@@ -804,15 +800,27 @@ contract LendefiCoreTest is BasicDeploy {
     }
 
     function test_Revert_mintShares_ZeroExpectedAmount() public {
-        vm.prank(charlie);
+        // Setup: Give charlie USDC and approve the core contract
+        uint256 requiredAmount = marketVaultInstance.previewMint(1000e18);
+        deal(address(usdcInstance), charlie, requiredAmount);
+        vm.startPrank(charlie);
+        usdcInstance.approve(address(marketCoreInstance), requiredAmount);
+
         vm.expectRevert(IPROTOCOL.ZeroAmount.selector);
         marketCoreInstance.mintShares(1000e18, 0, 100);
+        vm.stopPrank();
     }
 
     function test_Revert_mintShares_ZeroSlippage() public {
-        vm.prank(charlie);
+        // Setup: Give charlie USDC and approve the core contract
+        uint256 requiredAmount = marketVaultInstance.previewMint(1000e18);
+        deal(address(usdcInstance), charlie, requiredAmount);
+        vm.startPrank(charlie);
+        usdcInstance.approve(address(marketCoreInstance), requiredAmount);
+
         vm.expectRevert(IPROTOCOL.ZeroAmount.selector);
         marketCoreInstance.mintShares(1000e18, 1000e6, 0);
+        vm.stopPrank();
     }
 
     function test_Revert_mintShares_SlippageExceeded() public {
@@ -823,22 +831,21 @@ contract LendefiCoreTest is BasicDeploy {
         usdcInstance.approve(address(marketCoreInstance), amount);
         marketCoreInstance.depositLiquidity(amount, marketVaultInstance.previewDeposit(amount), 100);
         vm.stopPrank();
-
+        vm.warp(block.timestamp + 1);
         vm.roll(block.number + 1);
 
         uint256 sharesToMint = 50_000e18;
         uint256 actualCost = marketVaultInstance.previewMint(sharesToMint);
         uint256 unrealisticExpected = actualCost / 2; // Expect half the actual cost
 
-        // Give tokens to core contract since mintShares calls vault.mint() directly
-        deal(address(usdcInstance), address(marketCoreInstance), actualCost);
+        // Give tokens to charlie since mintShares now transfers from user
+        deal(address(usdcInstance), charlie, actualCost);
 
-        vm.prank(address(marketCoreInstance));
-        usdcInstance.approve(address(marketVaultInstance), actualCost);
-
-        vm.prank(charlie);
+        vm.startPrank(charlie);
+        usdcInstance.approve(address(marketCoreInstance), actualCost);
         vm.expectRevert(IPROTOCOL.MEVSlippageExceeded.selector);
         marketCoreInstance.mintShares(sharesToMint, unrealisticExpected, 100);
+        vm.stopPrank();
     }
 
     // ============ withdrawLiquidity Function Tests ============
