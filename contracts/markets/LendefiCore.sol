@@ -459,10 +459,16 @@ contract LendefiCore is
      * @custom:emits
      *   - PositionCreated(msg.sender, positionId, isIsolated)
      */
-    function createPosition(address asset, bool isIsolated) external validAsset(asset) nonReentrant whenNotPaused {
+    function createPosition(address asset, bool isIsolated)
+        external
+        validAsset(asset)
+        nonReentrant
+        whenNotPaused
+        returns (uint256 positionId)
+    {
         if (positions[msg.sender].length >= 1000) revert MaxPositionLimitReached(); // Max position limit
         UserPosition storage newPosition = positions[msg.sender].push();
-        uint256 positionId = positions[msg.sender].length - 1;
+        positionId = positions[msg.sender].length - 1;
 
         address vault = Clones.clone(cVault);
         // Verify clone was successful
