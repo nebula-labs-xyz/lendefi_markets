@@ -19,11 +19,11 @@ contract MarketFactoryZeroAddressTest is Test {
     address constant ASSETS = address(0x3333333333333333333333333333333333333333);
     address constant GOV_TOKEN = address(0x4444444444444444444444444444444444444444);
     address constant ECOSYSTEM = address(0x5555555555555555555555555555555555555555);
-    
+
     function test_Revert_Initialize_ZeroTimelock() public {
         LendefiPoRFeed porFeedImpl = new LendefiPoRFeed();
         LendefiMarketFactory factoryImpl = new LendefiMarketFactory();
-        
+
         bytes memory initData = abi.encodeWithSelector(
             LendefiMarketFactory.initialize.selector,
             address(0), // zero timelock
@@ -33,7 +33,7 @@ contract MarketFactoryZeroAddressTest is Test {
             address(porFeedImpl),
             ECOSYSTEM
         );
-        
+
         vm.expectRevert(abi.encodeWithSignature("ZeroAddress()"));
         new ERC1967Proxy(address(factoryImpl), initData);
     }
@@ -41,7 +41,7 @@ contract MarketFactoryZeroAddressTest is Test {
     function test_Revert_Initialize_ZeroTreasury() public {
         LendefiPoRFeed porFeedImpl = new LendefiPoRFeed();
         LendefiMarketFactory factoryImpl = new LendefiMarketFactory();
-        
+
         bytes memory initData = abi.encodeWithSelector(
             LendefiMarketFactory.initialize.selector,
             TIMELOCK,
@@ -51,7 +51,7 @@ contract MarketFactoryZeroAddressTest is Test {
             address(porFeedImpl),
             ECOSYSTEM
         );
-        
+
         vm.expectRevert(abi.encodeWithSignature("ZeroAddress()"));
         new ERC1967Proxy(address(factoryImpl), initData);
     }
@@ -59,7 +59,7 @@ contract MarketFactoryZeroAddressTest is Test {
     function test_Revert_Initialize_ZeroAssetsModule() public {
         LendefiPoRFeed porFeedImpl = new LendefiPoRFeed();
         LendefiMarketFactory factoryImpl = new LendefiMarketFactory();
-        
+
         bytes memory initData = abi.encodeWithSelector(
             LendefiMarketFactory.initialize.selector,
             TIMELOCK,
@@ -69,7 +69,7 @@ contract MarketFactoryZeroAddressTest is Test {
             address(porFeedImpl),
             ECOSYSTEM
         );
-        
+
         vm.expectRevert(abi.encodeWithSignature("ZeroAddress()"));
         new ERC1967Proxy(address(factoryImpl), initData);
     }
@@ -77,7 +77,7 @@ contract MarketFactoryZeroAddressTest is Test {
     function test_Revert_Initialize_ZeroGovToken() public {
         LendefiPoRFeed porFeedImpl = new LendefiPoRFeed();
         LendefiMarketFactory factoryImpl = new LendefiMarketFactory();
-        
+
         bytes memory initData = abi.encodeWithSelector(
             LendefiMarketFactory.initialize.selector,
             TIMELOCK,
@@ -87,14 +87,14 @@ contract MarketFactoryZeroAddressTest is Test {
             address(porFeedImpl),
             ECOSYSTEM
         );
-        
+
         vm.expectRevert(abi.encodeWithSignature("ZeroAddress()"));
         new ERC1967Proxy(address(factoryImpl), initData);
     }
 
     function test_Revert_Initialize_ZeroPoRFeed() public {
         LendefiMarketFactory factoryImpl = new LendefiMarketFactory();
-        
+
         bytes memory initData = abi.encodeWithSelector(
             LendefiMarketFactory.initialize.selector,
             TIMELOCK,
@@ -104,7 +104,7 @@ contract MarketFactoryZeroAddressTest is Test {
             address(0), // zero PoR feed
             ECOSYSTEM
         );
-        
+
         vm.expectRevert(abi.encodeWithSignature("ZeroAddress()"));
         new ERC1967Proxy(address(factoryImpl), initData);
     }
@@ -112,7 +112,7 @@ contract MarketFactoryZeroAddressTest is Test {
     function test_Revert_Initialize_ZeroEcosystem() public {
         LendefiPoRFeed porFeedImpl = new LendefiPoRFeed();
         LendefiMarketFactory factoryImpl = new LendefiMarketFactory();
-        
+
         bytes memory initData = abi.encodeWithSelector(
             LendefiMarketFactory.initialize.selector,
             TIMELOCK,
@@ -122,7 +122,7 @@ contract MarketFactoryZeroAddressTest is Test {
             address(porFeedImpl),
             address(0) // zero ecosystem
         );
-        
+
         vm.expectRevert(abi.encodeWithSignature("ZeroAddress()"));
         new ERC1967Proxy(address(factoryImpl), initData);
     }
@@ -130,7 +130,7 @@ contract MarketFactoryZeroAddressTest is Test {
     function test_Successful_Initialize_AllValidAddresses() public {
         LendefiPoRFeed porFeedImpl = new LendefiPoRFeed();
         LendefiMarketFactory factoryImpl = new LendefiMarketFactory();
-        
+
         bytes memory initData = abi.encodeWithSelector(
             LendefiMarketFactory.initialize.selector,
             TIMELOCK,
@@ -140,11 +140,11 @@ contract MarketFactoryZeroAddressTest is Test {
             address(porFeedImpl),
             ECOSYSTEM
         );
-        
+
         // This should succeed
         ERC1967Proxy proxy = new ERC1967Proxy(address(factoryImpl), initData);
         LendefiMarketFactory factory = LendefiMarketFactory(address(proxy));
-        
+
         // Verify initialization
         assertEq(factory.timelock(), TIMELOCK);
         assertEq(factory.treasury(), TREASURY);
