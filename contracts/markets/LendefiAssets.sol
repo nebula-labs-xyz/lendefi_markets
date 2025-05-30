@@ -352,7 +352,7 @@ contract LendefiAssets is
             if (config.porFeed.code.length == 0) revert CloneDeploymentFailed();
             IPoRFeed(config.porFeed).initialize(asset, address(this), timelock);
         } else {
-            if (config.porFeed == assetInfo[asset].porFeed) revert InvalidParameter("porFeed", 0);
+            if (config.porFeed != assetInfo[asset].porFeed) revert InvalidParameter("porFeed", 0);
         }
 
         assetInfo[asset] = config;
@@ -528,12 +528,12 @@ contract LendefiAssets is
 
         return _getChainlinkPrice(asset);
     }
+
     /**
      * @notice Returns the remaining time before a scheduled upgrade can be executed
      * @dev Returns 0 if no upgrade is scheduled or if the timelock has expired
      * @return timeRemaining The time remaining in seconds
      */
-
     function upgradeTimelockRemaining() external view returns (uint256) {
         return pendingUpgrade.exists
             && block.timestamp < pendingUpgrade.scheduledTime + LendefiConstants.UPGRADE_TIMELOCK_DURATION
