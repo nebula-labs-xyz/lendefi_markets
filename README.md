@@ -30,10 +30,10 @@ The protocol's revolutionary architecture centers around composable lending mark
 - **Market Factory Pattern**: The `LendefiMarketFactory` deploys and manages multiple lending markets, each with its own base asset (USDC, DAI, USDT, etc.)
 - **Isolated Liquidity Pools**: Each market maintains completely separate liquidity, preventing contagion between different base assets
 - **Market-Specific Components**: Every market consists of:
-  - **LendefiCore**: Handles collateral management, borrowing logic, and risk parameters
-  - **LendefiMarketVault**: ERC-4626 compliant vault managing base asset deposits and yield distribution
-  - **Proof of Reserve Feed**: Market-specific PoR integration for transparent asset verification
-  - **Isolated Position Vaults**: Individual vault contracts for each user position within the market
+  - **LendefiCore**: Manages positions and collateral, calculates borrow rates based on utilization and risk tiers
+  - **LendefiMarketVault**: Manages liquidity for lenders, calculates supply rates, handles deposits/withdrawals with protocol PoR
+  - **LendefiAssets**: Manages collateral asset configuration, price oracles, and collateral-specific PoR feeds
+  - **Position Vaults**: Created by LendefiCore as minimal proxies to isolate each user's collateral
 
 ### Key Architectural Benefits
 
@@ -50,7 +50,8 @@ The protocol's revolutionary architecture centers around composable lending mark
 - **Independent Markets**: Each base asset (USDC, DAI, USDT, etc.) operates its own lending market
 - **Cross-Market Collateral**: Users can use collateral from any whitelisted asset across different markets
 - **Market-Specific Yield Tokens**: Each market issues its own ERC-4626 yield-bearing tokens to liquidity providers
-- **Unified Collateral Management**: Single asset module manages collateral configurations across all markets
+- **Market-Specific Asset Modules**: Each market has its own asset configuration module for independent risk management
+- **Automated Proof of Reserve**: Chainlink Automation ensures real-time PoR updates for each market
 
 ### Advanced Risk Management
 
@@ -77,6 +78,8 @@ Every position across all markets utilizes dedicated vault contracts:
 - Enhanced security through position-level isolation
 - Regulatory compliance through technical asset segregation
 - Protection from cross-position vulnerabilities
+- Optimized initialization with owner set during deployment
+- Gas-efficient minimal proxy pattern for vault creation
 
 ## Market Creation & Management
 
@@ -95,10 +98,10 @@ factory.createMarket(
 
 Each market deployment includes:
 
-- Upgradeable LendefiCore contract (UUPS proxy)
-- ERC-4626 compliant vault for the base asset
-- Dedicated Proof of Reserve feed
-- Automatic integration with the protocol's asset module
+- Upgradeable LendefiCore contract (UUPS proxy) with position vault creation logic
+- ERC-4626 compliant LendefiMarketVault with Chainlink Automation for protocol PoR
+- Market-specific LendefiAssets module with collateral asset PoR feeds
+- Position vault implementation template for cloning user vaults
 
 ### Market Lifecycle
 
@@ -115,29 +118,40 @@ Each market deployment includes:
 ```
 LendefiMarketFactory
 ├── Creates Markets →
-│   ├── LendefiCore (Proxy)
-│   │   ├── Position Management
-│   │   ├── Collateral Logic
-│   │   └── Interest Calculations
-│   └── LendefiMarketVault (Proxy)
-│       ├── ERC-4626 Vault
-│       ├── Liquidity Management
-│       └── Flash Loans
-├── Asset Module (Shared)
-│   ├── Oracle Integration
-│   ├── Risk Parameters
-│   └── Proof of Reserve
-└── Position Vaults
-    └── Individual User Vaults
+│   ├── LendefiCore (User functions)
+│   │   ├── Position/Collateral Management
+│   │   ├── Borrow Rate Calculations
+│   │   ├── Creates Position Vaults
+│   │   ├── MEV Protection
+│   │   ├── Optimized TVL Tracking
+│   │   └── LendefiPositionVault (Clones)
+│   │       └── Individual User Vaults
+│   ├── LendefiMarketVault (Yield Token)
+│   │   ├── ERC-4626 Vault
+│   │   ├── Liquidity Management
+│   │   ├── Lender Rate Calculations
+│   │   ├── Flash Loans (9 bps fee)
+│   │   ├── Reward Distribution
+│   │   ├── Chainlink Automation Integration
+│   │   └── Protocol Collateralization PoR
+│   └── LendefiAssets (Asset Management)
+│       ├── Chainlink Oracle Integration
+│       ├── Uniswap V3 TWAP Fallback
+│       ├── Risk Parameters (4 Tiers)
+│       ├── Asset Configuration
+│       └── Collateral Asset PoR Feeds
+└── LendefiView
+    └── Read-only Aggregation
 ```
 
 ### Key Components
 
-1. **LendefiMarketFactory**: Deploys and tracks all lending markets
-2. **LendefiCore**: Market-specific lending logic and collateral management
-3. **LendefiMarketVault**: ERC-4626 vault handling base asset deposits
-4. **Asset Module**: Shared configuration for collateral assets across markets
-5. **Position Vaults**: Cloned vault contracts for each user position
+1. **LendefiMarketFactory**: Deploys and tracks all lending markets with implementation management
+2. **LendefiCore**: Handles position/collateral management, calculates borrow rates, creates position vaults for users
+3. **LendefiMarketVault**: Manages liquidity pools, calculates lender rates, handles deposits/withdrawals, provides protocol PoR via Chainlink Automation
+4. **LendefiAssets**: Market-specific module managing collateral asset configuration, price oracles, and collateral asset PoR feeds
+5. **LendefiPositionVault**: Minimal proxy vaults created by LendefiCore for each user position to isolate collateral
+6. **LendefiView**: Read-only contract for efficient data aggregation across positions and markets
 
 ## Features Across Markets
 
@@ -147,12 +161,14 @@ LendefiMarketFactory
 2. Up to 1000 positions per user per market
 3. Up to 20 collateral assets per position
 4. Automatic interest compounding
-5. Gas-efficient operations
+5. Gas-efficient operations with optimized TVL tracking
 6. Market-specific yield tokens (ERC-4626)
-7. Complete upgradeability (per market)
+7. Complete upgradeability
 8. DAO governance
 9. Unified reward ecosystem
 10. Flash loan functionality per market
+11. MEV protection on all user operations
+12. Optimized position creation with single initialization call
 
 ### Market-Specific Features
 
@@ -172,7 +188,9 @@ The protocol implements defense-in-depth security across all markets:
 - **Oracle Security**: Multi-oracle support with freshness checks
 - **Upgradeable Architecture**: UUPS pattern with version tracking
 - **Input Validation**: Comprehensive checks and custom errors
-- **MEV Protection**: Same-block operation prevention
+- **MEV Protection**: Same-block operation prevention on deposits, withdrawals, and minting
+- **TVL Tracking**: Optimized on-chain TVL updates with gas-efficient storage patterns
+- **Slippage Protection**: Built-in slippage checks for all liquidity operations
 
 ## Economic Model
 
@@ -180,10 +198,11 @@ The protocol implements defense-in-depth security across all markets:
 
 Each lending market operates with independent economic parameters:
 
-1. **Interest Rates**: Utilization-based with tier adjustments
-2. **Protocol Revenue**: Market-specific fee capture
-3. **Flash Loans**: Configurable fees per market (default 9 bps)
-4. **Liquidation Incentives**: Tier-based bonuses across all markets
+1. **Borrow Rates**: Calculated by LendefiCore based on utilization and collateral tier
+2. **Supply Rates**: Calculated by LendefiMarketVault based on utilization and protocol fees
+3. **Protocol Revenue**: Market-specific fee capture from spread between borrow and supply rates
+4. **Flash Loans**: Configurable fees per market (default 9 bps) handled by MarketVault
+5. **Liquidation Incentives**: Tier-based bonuses (1-4%) managed by LendefiCore
 
 ### Cross-Market Synergies
 
@@ -203,10 +222,18 @@ Each lending market operates with independent economic parameters:
 
 ### Proof of Reserve
 
-- Market-specific PoR feeds
-- Real-time reserve verification
-- Automated TVL tracking
-- Circuit breaker integration
+Two types of PoR feeds per market:
+
+1. **Protocol Collateralization PoR** (LendefiMarketVault):
+
+   - Tracks overall protocol collateralization for the base currency
+   - Updated automatically via Chainlink Automation
+   - Reports total borrowed vs total supplied
+
+2. **Collateral Asset PoR** (LendefiAssets):
+   - Individual PoR feeds for each collateral asset
+   - Tracks reserves of specific collateral tokens
+   - Used for asset verification and risk management
 
 ### Fallback Mechanisms
 
@@ -260,13 +287,18 @@ LendefiCore.Market memory market = factory.getMarketInfo(USD1);
 LendefiCore core = LendefiCore(market.core);
 LendefiMarketVault vault = LendefiMarketVault(market.baseVault);
 
-// Supply liquidity to USDC market
-vault.deposit(amount, recipient);
+// Supply liquidity to USD1 market with slippage protection
+core.depositLiquidity(amount, expectedShares, maxSlippageBps);
 
-// Borrow from USDC market using any collateral
-core.createPosition(WETH, false); // Cross-collateral position
+// Create position and get position ID
+uint256 positionId = core.createPosition(WETH, false); // Returns position ID
+
+// Supply collateral and borrow
 core.supplyCollateral(WETH, amount, positionId);
 core.borrow(positionId, borrowAmount);
+
+// Mint shares with MEV protection
+core.mintShares(sharesAmount, expectedAmount, maxSlippageBps);
 ```
 
 ## Deployed Markets
@@ -303,6 +335,26 @@ LendefiCore.Market memory usdcMarket = factory.getMarketInfo(USDC);
 - Market-specific optimizations
 - Easier regulatory compliance
 - Simplified risk management
+
+## Recent Optimizations
+
+The protocol has undergone significant optimizations to improve gas efficiency and user experience:
+
+### Gas Optimizations
+
+- **TVL Tracking**: Streamlined TVL updates with efficient storage patterns reducing gas costs by ~30%
+- **Position Vault Initialization**: Combined core and owner initialization into single call
+- **Input Validation**: Optimized validation checks to reduce redundant operations
+- **Storage Packing**: Improved struct packing for reduced storage costs
+
+### Feature Enhancements
+
+- **MEV Protection**: Enhanced protection on deposits, withdrawals, and share minting
+- **Position Creation**: Now returns position ID directly for better UX
+- **Slippage Controls**: Added comprehensive slippage protection across all liquidity operations
+- **Upgrade Testing**: Comprehensive upgrade test coverage for all core contracts
+- **Chainlink Automation**: Integrated automated Proof of Reserve updates for real-time collateralization reporting
+- **Market-Specific Assets**: Each market now has its own asset configuration module for better isolation
 
 ## Future Developments
 
