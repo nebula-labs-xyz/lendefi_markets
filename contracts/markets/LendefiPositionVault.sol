@@ -47,59 +47,32 @@ contract LendefiPositionVault is Initializable {
     /// @notice Thrown when a caller other than the LendefiCore contract attempts an operation
     error OnlyCORE();
 
-    /// @notice Thrown when attempting to change the owner after it has already been set
-    error CantChangeOwner();
-
     // ========== INITIALIZATION ==========
 
     /**
-     * @notice Initializes the position vault with the controlling core contract
+     * @notice Initializes the position vault with the controlling core contract and owner
      * @dev This function is called immediately after the vault is deployed as a minimal proxy.
      *      It establishes the connection between this vault and the LendefiCore contract
-     *      that will manage all operations on the stored collateral.
+     *      that will manage all operations on the stored collateral, and sets the owner
+     *      who owns the collateral stored in this vault.
      * @param _core Address of the LendefiCore contract that will control this vault
+     * @param _owner Address of the user who will own the collateral in this vault
      *
      * @custom:requirements
      *   - Function can only be called once during deployment
      *   - _core address will be the only address authorized to perform operations
+     *   - _owner cannot be changed after initialization
      *
      * @custom:state-changes
      *   - Sets the core address to _core
+     *   - Sets the owner address to _owner
      *   - Initializes the contract for proxy usage
      *
      * @custom:access-control Only callable during contract initialization
      * @custom:proxy-pattern Used with OpenZeppelin's minimal proxy factory pattern
      */
-    function initialize(address _core) external initializer {
+    function initialize(address _core, address _owner) external initializer {
         core = _core;
-    }
-
-    // ========== OWNERSHIP MANAGEMENT ==========
-
-    /**
-     * @notice Sets the owner of this position vault (can only be called once)
-     * @dev Establishes the user who owns the collateral stored in this vault.
-     *      This function can only be called once to prevent ownership manipulation
-     *      and ensure that collateral always belongs to the correct user.
-     * @param _owner Address of the user who will own the collateral in this vault
-     *
-     * @custom:requirements
-     *   - Caller must be the LendefiCore contract
-     *   - Owner must not have been set previously (must be zero address)
-     *
-     * @custom:state-changes
-     *   - Sets the owner address to _owner
-     *   - Makes the owner address immutable (cannot be changed again)
-     *
-     * @custom:access-control Restricted to LendefiCore contract only
-     * @custom:security Prevents ownership hijacking by making owner immutable after first set
-     * @custom:error-cases
-     *   - OnlyCORE: When caller is not the LendefiCore contract
-     *   - CantChangeOwner: When owner has already been set previously
-     */
-    function setOwner(address _owner) external {
-        if (msg.sender != core) revert OnlyCORE();
-        if (owner != address(0)) revert CantChangeOwner();
         owner = _owner;
     }
 
