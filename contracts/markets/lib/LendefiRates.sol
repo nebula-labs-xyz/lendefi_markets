@@ -6,6 +6,8 @@ pragma solidity 0.8.23;
  * @dev Contains math-heavy functions to reduce main contract size
  */
 
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+
 library LendefiRates {
     /// @dev base scale
     uint256 internal constant WAD = 1e6;
@@ -15,23 +17,23 @@ library LendefiRates {
     uint256 internal constant SECONDS_PER_YEAR_RAY = 365 * 86400 * RAY;
 
     /**
-     * @dev rmul function
-     * @param x amount
-     * @param y amount
-     * @return z value
+     * @dev rmul function - multiplies two RAY-scaled numbers
+     * @param x amount in RAY
+     * @param y amount in RAY
+     * @return z value in RAY
      */
     function rmul(uint256 x, uint256 y) internal pure returns (uint256 z) {
-        z = ((x * y) + RAY / 2) / RAY;
+        z = Math.mulDiv(x, y, RAY, Math.Rounding.Ceil);
     }
 
     /**
-     * @dev rdiv function
+     * @dev rdiv function - divides two numbers and scales to RAY
      * @param x amount
      * @param y amount
-     * @return z value
+     * @return z value in RAY
      */
     function rdiv(uint256 x, uint256 y) internal pure returns (uint256 z) {
-        z = ((x * RAY) + y / 2) / y;
+        z = Math.mulDiv(x, RAY, y, Math.Rounding.Ceil);
     }
 
     /**
@@ -67,11 +69,13 @@ library LendefiRates {
 
     /**
      * @dev Converts rate to rateRay
-     * @param rate rate
+     * @param rate annual rate in WAD
      * @return r rateRay
      */
     function annualRateToRay(uint256 rate) internal pure returns (uint256 r) {
-        r = RAY + rdiv((rate * RAY) / WAD, SECONDS_PER_YEAR_RAY);
+        // First convert rate from WAD to RAY, then divide by seconds per year
+        uint256 rateInRay = Math.mulDiv(rate, RAY, WAD, Math.Rounding.Floor);
+        r = RAY + Math.mulDiv(rateInRay, RAY, SECONDS_PER_YEAR_RAY, Math.Rounding.Floor);
     }
 
     /**
@@ -103,7 +107,7 @@ library LendefiRates {
      * @return breakeven borrow rate
      */
     function breakEvenRate(uint256 loan, uint256 supplyInterest) internal pure returns (uint256) {
-        return ((WAD * (loan + supplyInterest)) / loan) - WAD;
+        return Math.mulDiv(WAD, loan + supplyInterest, loan, Math.Rounding.Floor) - WAD;
     }
 
     /**
@@ -141,14 +145,14 @@ library LendefiRates {
         if (totalSuppliedLiquidity == 0) return 0;
 
         uint256 fee = 0;
-        uint256 target = (totalSupply * baseProfitTarget) / WAD;
+        uint256 target = Math.mulDiv(totalSupply, baseProfitTarget, WAD, Math.Rounding.Floor);
         uint256 total = usdcBalance + totalBorrow;
 
         if (total >= totalSuppliedLiquidity + target) {
             fee = target;
         }
 
-        return ((WAD * total) / (totalSuppliedLiquidity + fee)) - WAD;
+        return Math.mulDiv(WAD, total, totalSuppliedLiquidity + fee, Math.Rounding.Floor) - WAD;
     }
 
     /**
@@ -171,7 +175,7 @@ library LendefiRates {
 
         uint256 duration = 365 days;
         uint256 defaultSupply = WAD;
-        uint256 loan = (defaultSupply * utilization) / WAD;
+        uint256 loan = Math.mulDiv(defaultSupply, utilization, WAD, Math.Rounding.Floor);
 
         // Calculate base rate from supply rate
         uint256 supplyRateRay = annualRateToRay(supplyRate);
@@ -182,6 +186,6 @@ library LendefiRates {
         uint256 rate = breakEven + baseProfitTarget;
         uint256 baseRate = rate > baseBorrowRate ? rate : baseBorrowRate;
 
-        return baseRate + ((tierJumpRate * utilization) / WAD);
+        return baseRate + Math.mulDiv(tierJumpRate, utilization, WAD, Math.Rounding.Floor);
     }
 }
