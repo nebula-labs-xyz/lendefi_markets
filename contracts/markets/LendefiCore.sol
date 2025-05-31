@@ -474,8 +474,7 @@ contract LendefiCore is
         // Verify clone was successful
         if (vault == address(0)) revert CloneDeploymentFailed();
         if (vault.code.length == 0) revert CloneDeploymentFailed();
-        ILendefiPositionVault(vault).initialize(address(this));
-        ILendefiPositionVault(vault).setOwner(msg.sender);
+        ILendefiPositionVault(vault).initialize(address(this), msg.sender);
 
         newPosition.vault = vault;
         newPosition.isIsolated = isIsolated;
