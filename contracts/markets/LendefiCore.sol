@@ -35,7 +35,7 @@ import {IASSETS} from "../interfaces/IASSETS.sol";
 import {IPROTOCOL} from "../interfaces/IProtocol.sol";
 import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 import {ILendefiMarketVault} from "../interfaces/ILendefiMarketVault.sol";
-import {FullMath} from "@uniswap/v4-core/src/libraries/FullMath.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 /// @custom:oz-upgrades
 contract LendefiCore is
@@ -943,18 +943,18 @@ contract LendefiCore is
 
             IASSETS.AssetCalculationParams memory params = assetsModule.getAssetCalculationParams(asset);
 
-            // Use FullMath.mulDiv for maximum precision without overflow
+            // Use Math.mulDiv for maximum precision without overflow
             // First calculate the base value conversion
             uint256 assetValueInbaseDecimals =
-                FullMath.mulDiv(amount * params.price, baseDecimals, paramsBase.price * (10 ** params.decimals));
+                Math.mulDiv(amount * params.price, baseDecimals, paramsBase.price * (10 ** params.decimals));
 
             value += assetValueInbaseDecimals;
 
             // Calculate credit with full precision using mulDiv
-            credit += FullMath.mulDiv(assetValueInbaseDecimals, params.borrowThreshold, 1000);
+            credit += Math.mulDiv(assetValueInbaseDecimals, params.borrowThreshold, 1000);
 
             // Calculate liquidation level with full precision using mulDiv
-            liqLevel += FullMath.mulDiv(assetValueInbaseDecimals, params.liquidationThreshold, 1000);
+            liqLevel += Math.mulDiv(assetValueInbaseDecimals, params.liquidationThreshold, 1000);
         }
     }
 
