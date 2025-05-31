@@ -205,7 +205,7 @@ contract LendefiViewTest is BasicDeploy {
 
         // Last accrual block is set to 0 (as noted in contract)
         assertEq(lastAccrualBlock, 0, "Last accrual block should be 0");
-        
+
         // Reward eligibility and pending rewards depend on configuration
         // These are initially false/0 since not enough time has passed
         assertFalse(isRewardEligible, "Should not be reward eligible initially");
@@ -313,36 +313,36 @@ contract LendefiViewTest is BasicDeploy {
     function test_GetLPInfo_RewardEligibleScenario() public {
         // Configure rewards properly
         vm.startPrank(address(timelockInstance));
-        
+
         // Grant the REWARDER_ROLE to the vault contract for ecosystem rewards
         ecoInstance.grantRole(REWARDER_ROLE, address(marketVaultInstance));
-        
+
         // Configure protocol for rewards
         IPROTOCOL.ProtocolConfig memory config = marketCoreInstance.getConfig();
         config.rewardAmount = 1_000e18; // Set target reward to 1000 tokens
         config.rewardInterval = 180 * 24 * 60 * 5; // 180 days in blocks (5 blocks per minute)
         config.rewardableSupply = 50_000e6; // Set rewardable supply threshold to 50k USDC
         marketCoreInstance.loadProtocolConfig(config);
-        
+
         vm.stopPrank();
-        
+
         // Charlie deposits enough to meet threshold
         uint256 depositAmount = 150_000e6; // More than 50k threshold
         usdcInstance.mint(charlie, depositAmount);
         vm.startPrank(charlie);
         usdcInstance.approve(address(marketCoreInstance), depositAmount);
-        
+
         // Move to next block to avoid MEV protection
         vm.roll(block.number + 1);
         vm.warp(block.timestamp + 1);
-        
+
         uint256 expectedShares = marketVaultInstance.previewDeposit(depositAmount);
         marketCoreInstance.depositLiquidity(depositAmount, expectedShares, 100);
         vm.stopPrank();
-        
+
         // Fast-forward past the reward interval
         vm.roll(block.number + config.rewardInterval + 1);
-        
+
         // Now test getLPInfo for the eligible user
         (
             uint256 lpTokenBalance,
@@ -351,22 +351,24 @@ contract LendefiViewTest is BasicDeploy {
             bool isRewardEligible,
             uint256 pendingRewards
         ) = lendefiView.getLPInfo(charlie);
-        
+
         // Verify basic LP info
         assertGt(lpTokenBalance, 0, "LP token balance should be positive");
         assertApproxEqAbs(usdcValue, depositAmount, 1000e6, "USDC value should approximate deposit");
         assertEq(lastAccrualBlock, 0, "Last accrual block should be 0");
-        
+
         // Verify reward eligibility and pending rewards
         assertTrue(isRewardEligible, "User should be reward eligible");
         assertGt(pendingRewards, 0, "Should have pending rewards");
-        
+
         // Verify pending rewards don't exceed maximum
         uint256 maxReward = ecoInstance.maxReward();
         assertLe(pendingRewards, maxReward, "Pending rewards should not exceed max reward");
-        
+
         // Verify reward calculation is reasonable (should be approximately the configured amount)
-        assertApproxEqAbs(pendingRewards, config.rewardAmount, config.rewardAmount / 10, "Pending rewards should be reasonable");
+        assertApproxEqAbs(
+            pendingRewards, config.rewardAmount, config.rewardAmount / 10, "Pending rewards should be reasonable"
+        );
     }
 
     // ========== HELPER FUNCTIONS ==========
