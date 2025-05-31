@@ -600,7 +600,12 @@ contract LendefiAssetsV2 is
      * @return true if supply would exceed maximum threshold
      * @custom:validation Asset must be listed
      */
-    function isAssetAtCapacity(address asset, uint256 additionalAmount, uint256 tvl) external view onlyListedAsset(asset) returns (bool) {
+    function isAssetAtCapacity(address asset, uint256 additionalAmount, uint256 tvl)
+        external
+        view
+        onlyListedAsset(asset)
+        returns (bool)
+    {
         // Check standard supply cap
         if (tvl + additionalAmount > assetInfo[asset].maxSupplyThreshold) {
             return true;
