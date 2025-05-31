@@ -42,6 +42,7 @@ import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/acce
 import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import {EnumerableMap} from "@openzeppelin/contracts/utils/structs/EnumerableMap.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {LendefiConstants} from "./lib/LendefiConstants.sol";
 import {LendefiRates} from "./lib/LendefiRates.sol";
 import {LendefiPoRFeed} from "./LendefiPoRFeed.sol";
@@ -118,6 +119,10 @@ contract LendefiMarketVault is
     /// @dev Used for accessing asset tier information and jump rates
     address public assetsModule;
 
+    /// @notice Address of the timelock contract with protocol governance
+    /// @dev Receives protocol fees when they are collected
+    address public timelock;
+
     /// @notice Cached protocol configuration to avoid repeated external calls
     /// @dev Contains interest rates, fees, and reward parameters
     IPROTOCOL.ProtocolConfig public protocolConfig;
@@ -177,6 +182,11 @@ contract LendefiMarketVault is
     /// @param totalSupply Total supply of vault shares at the time of alert
     event CollateralizationAlert(uint256 timestamp, uint256 tvl, uint256 totalSupply);
 
+    /// @notice Emitted when protocol fees are collected through share dilution
+    /// @param recipient Address that received the fee shares (timelock)
+    /// @param feeShares Number of shares minted as protocol fees
+    event ProtocolFeesCollected(address indexed recipient, uint256 feeShares);
+
     // ========== ERRORS ==========
 
     /// @notice Thrown when a required address parameter is the zero address
@@ -234,7 +244,7 @@ contract LendefiMarketVault is
      *      - Protocol configuration caching
      *
      *      This function can only be called once during proxy deployment.
-     * @param timelock Address of the timelock contract with admin privileges
+     * @param _timelock Address of the timelock contract with admin privileges
      * @param core Address of the LendefiCore contract for this market
      * @param baseAsset Address of the ERC20 token used as the base asset
      * @param _ecosystem Address of the ecosystem contract for reward distribution
@@ -261,7 +271,7 @@ contract LendefiMarketVault is
      *   - ZeroAddress: When any required address parameter is zero
      */
     function initialize(
-        address timelock,
+        address _timelock,
         address core,
         address baseAsset,
         address _ecosystem,
@@ -270,7 +280,7 @@ contract LendefiMarketVault is
         string memory symbol
     ) external initializer {
         if (baseAsset == address(0)) revert ZeroAddress();
-        if (timelock == address(0)) revert ZeroAddress();
+        if (_timelock == address(0)) revert ZeroAddress();
         if (core == address(0)) revert ZeroAddress();
         if (_ecosystem == address(0)) revert ZeroAddress();
         if (_assetsModule == address(0)) revert ZeroAddress();
@@ -279,11 +289,12 @@ contract LendefiMarketVault is
         lendefiCore = core;
         ecosystem = _ecosystem;
         assetsModule = _assetsModule;
+        timelock = _timelock;
         version = 1;
         interval = 12 hours;
         lastTimeStamp = block.timestamp;
         porFeed = address(new LendefiPoRFeed());
-        IPoRFeed(porFeed).initialize(baseAsset, address(this), timelock);
+        IPoRFeed(porFeed).initialize(baseAsset, address(this), _timelock);
         // Initialize protocol config from core
         protocolConfig = IPROTOCOL(core).getConfig();
 
@@ -293,11 +304,11 @@ contract LendefiMarketVault is
         __ReentrancyGuard_init();
         __Pausable_init();
 
-        _grantRole(DEFAULT_ADMIN_ROLE, timelock);
-        _grantRole(LendefiConstants.PAUSER_ROLE, timelock);
+        _grantRole(DEFAULT_ADMIN_ROLE, _timelock);
+        _grantRole(LendefiConstants.PAUSER_ROLE, _timelock);
         _grantRole(LendefiConstants.PROTOCOL_ROLE, core);
-        _grantRole(LendefiConstants.UPGRADER_ROLE, timelock);
-        _grantRole(LendefiConstants.MANAGER_ROLE, timelock);
+        _grantRole(LendefiConstants.UPGRADER_ROLE, _timelock);
+        _grantRole(LendefiConstants.MANAGER_ROLE, _timelock);
 
         emit Initialized(msg.sender);
     }
@@ -722,9 +733,18 @@ contract LendefiMarketVault is
         if (lastOperationBlock >= currentBlock) revert MEVSameBlockOperation();
         liquidityOperationBlock[owner] = currentBlock;
 
+        // Calculate and collect fees before withdrawal
+        uint256 fee = _calculateVirtualFeeShares();
+
         uint256 shares = super.withdraw(amount, receiver, owner);
         totalBase -= amount;
         totalSuppliedLiquidity -= amount;
+
+        if (fee > 0) {
+            _mint(timelock, fee);
+            emit ProtocolFeesCollected(timelock, fee);
+        }
+
         return shares;
     }
 
@@ -770,9 +790,18 @@ contract LendefiMarketVault is
         if (lastOperationBlock >= currentBlock) revert MEVSameBlockOperation();
         liquidityOperationBlock[owner] = currentBlock;
 
+        // Calculate and collect fees before redemption
+        uint256 fee = _calculateVirtualFeeShares();
+
         uint256 amount = super.redeem(shares, receiver, owner);
         totalBase -= amount;
         totalSuppliedLiquidity -= amount;
+
+        if (fee > 0) {
+            _mint(timelock, fee);
+            emit ProtocolFeesCollected(timelock, fee);
+        }
+
         return amount;
     }
 
@@ -947,6 +976,60 @@ contract LendefiMarketVault is
             getSupplyRate(),
             IASSETS(assetsModule).getTierJumpRate(tier)
         );
+    }
+
+    // ========== INTERNAL FUNCTIONS ==========
+
+    /**
+     * @dev Calculates the virtual fee shares that would be minted if fees were collected now.
+     * This represents the protocol's earned but uncollected commission.
+     */
+    function _calculateVirtualFeeShares() internal view returns (uint256) {
+        uint256 supply = totalSupply();
+        if (supply == 0) return 0;
+
+        uint256 total = totalBase;
+        uint256 target =
+            Math.mulDiv(totalSuppliedLiquidity, protocolConfig.profitTargetRate, baseDecimals, Math.Rounding.Floor);
+
+        if (total >= totalSuppliedLiquidity + target) {
+            return target;
+        }
+        return 0;
+    }
+
+    /**
+     * @dev Internal conversion function (from assets to shares) with support for rounding direction.
+     * Modified to account for protocol commission by adjusting the total supply calculation.
+     */
+    function _convertToShares(uint256 assets, Math.Rounding rounding)
+        internal
+        view
+        virtual
+        override
+        returns (uint256)
+    {
+        uint256 supply = totalSupply();
+        uint256 virtualSupply = supply + _calculateVirtualFeeShares();
+
+        return Math.mulDiv(assets, virtualSupply + 10 ** _decimalsOffset(), totalAssets() + 1, rounding);
+    }
+
+    /**
+     * @dev Internal conversion function (from shares to assets) with support for rounding direction.
+     * Modified to account for protocol commission by adjusting the total supply calculation.
+     */
+    function _convertToAssets(uint256 shares, Math.Rounding rounding)
+        internal
+        view
+        virtual
+        override
+        returns (uint256)
+    {
+        uint256 supply = totalSupply();
+        uint256 virtualSupply = supply + _calculateVirtualFeeShares();
+
+        return Math.mulDiv(shares, totalAssets() + 1, virtualSupply + 10 ** _decimalsOffset(), rounding);
     }
 
     /**
