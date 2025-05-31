@@ -12,10 +12,6 @@ interface ILendefiPositionVault {
     /// @notice Returns the address of the vault owner
     function owner() external view returns (address);
 
-    /// @notice Sets the owner of the vault (only callable by protocol during position creation)
-    /// @param _owner Address of the new owner
-    function setOwner(address _owner) external;
-
     /// @notice Transfers tokens from the vault to the owner
     /// @param token Address of the token to transfer
     /// @param amount Amount to transfer
@@ -28,5 +24,6 @@ interface ILendefiPositionVault {
 
     /// @notice Initializes the vault
     /// @param _core Address of the protocol that controls this vault
-    function initialize(address _core) external;
+    /// @param _owner Address of the user who will own the collateral in this vault
+    function initialize(address _core, address _owner) external;
 }
