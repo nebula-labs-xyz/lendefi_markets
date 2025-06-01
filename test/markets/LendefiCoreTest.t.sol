@@ -1373,18 +1373,29 @@ contract LendefiCoreTest is BasicDeploy {
         uint256 collateralAmount = 2 ether;
         _supplyCollateral(bob, positionId, address(wethInstance), collateralAmount);
 
+        // Advance time and block to avoid MEV protection
+        vm.warp(block.timestamp + 1);
+        vm.roll(block.number + 1);
+
         // Borrow close to the limit (80% of $5000 = $4000)
         uint256 borrowAmount = 3900e6; // $3900 USDC
         _borrow(bob, positionId, borrowAmount);
+        
+        // Advance time and block again before withdrawal
+        vm.warp(block.timestamp + 1);
+        vm.roll(block.number + 1);
 
         // Try to withdraw collateral that would make position undercollateralized
         // Withdrawing 1.5 ETH would leave only 0.5 ETH = $1250 collateral
         // Credit limit would be $1250 * 0.8 = $1000, which is less than debt of $3900
         uint256 withdrawAmount = 1.5 ether;
+        
+        // Calculate expected credit limit after withdrawal
+        uint256 expectedCreditLimit = marketCoreInstance.calculateCreditLimit(bob, positionId);
 
         vm.prank(bob);
         vm.expectRevert(IPROTOCOL.CreditLimitExceeded.selector);
-        marketCoreInstance.withdrawCollateral(address(wethInstance), withdrawAmount, positionId, 1000e6, 100);
+        marketCoreInstance.withdrawCollateral(address(wethInstance), withdrawAmount, positionId, expectedCreditLimit, 100);
     }
 
     function test_WithdrawCollateral_Success() public {
@@ -1393,19 +1404,30 @@ contract LendefiCoreTest is BasicDeploy {
         uint256 collateralAmount = 2 ether;
         _supplyCollateral(bob, positionId, address(wethInstance), collateralAmount);
 
+        // Advance time and block to avoid MEV protection
+        vm.warp(block.timestamp + 1);
+        vm.roll(block.number + 1);
+
         // Borrow a moderate amount
         uint256 borrowAmount = 1000e6; // $1000 USDC
         _borrow(bob, positionId, borrowAmount);
+        
+        // Advance time and block again before withdrawal
+        vm.warp(block.timestamp + 1);
+        vm.roll(block.number + 1);
 
         // Withdraw some collateral that still keeps position healthy
         uint256 withdrawAmount = 0.5 ether;
         uint256 balanceBefore = wethInstance.balanceOf(bob);
+        
+        // Calculate expected credit limit after withdrawal
+        uint256 expectedCreditLimit = marketCoreInstance.calculateCreditLimit(bob, positionId);
 
         vm.expectEmit(true, true, true, true);
         emit WithdrawCollateral(bob, positionId, address(wethInstance), withdrawAmount);
 
         vm.prank(bob);
-        marketCoreInstance.withdrawCollateral(address(wethInstance), withdrawAmount, positionId, 1500e6, 100);
+        marketCoreInstance.withdrawCollateral(address(wethInstance), withdrawAmount, positionId, expectedCreditLimit, 100);
 
         // Verify withdrawal
         assertEq(wethInstance.balanceOf(bob), balanceBefore + withdrawAmount);
@@ -1421,12 +1443,19 @@ contract LendefiCoreTest is BasicDeploy {
         uint256 collateralAmount = 1 ether;
         _supplyCollateral(bob, positionId, address(wethInstance), collateralAmount);
 
+        // Advance time and block to avoid MEV protection
+        vm.warp(block.timestamp + 1);
+        vm.roll(block.number + 1);
+
         // Don't borrow anything
         uint256 balanceBefore = wethInstance.balanceOf(bob);
 
+        // Calculate expected credit limit (should be 0 since no debt)
+        uint256 expectedCreditLimit = marketCoreInstance.calculateCreditLimit(bob, positionId);
+        
         // Withdraw all collateral
         vm.prank(bob);
-        marketCoreInstance.withdrawCollateral(address(wethInstance), collateralAmount, positionId, 2000e6, 100);
+        marketCoreInstance.withdrawCollateral(address(wethInstance), collateralAmount, positionId, expectedCreditLimit, 100);
 
         // Verify full withdrawal
         assertEq(wethInstance.balanceOf(bob), balanceBefore + collateralAmount);
