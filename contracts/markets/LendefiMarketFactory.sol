@@ -14,9 +14,9 @@ pragma solidity 0.8.23;
  * @title Lendefi Market Factory
  * @author alexei@nebula-labs(dot)xyz
  * @notice Factory contract for creating and managing LendefiCore + ERC4626 vault pairs for different base assets
- * @dev Creates composable lending markets where each base asset gets its own isolated lending market
- *      with dedicated core logic and vault implementation. Uses OpenZeppelin's clone factory pattern
- *      for gas-efficient deployment of market instances.
+ *         with multi-tenant support where each market owner can create isolated markets
+ * @dev Creates composable lending markets where each market owner can deploy their own isolated lending market
+ *      for any base asset. Uses OpenZeppelin's clone factory pattern for gas-efficient deployment.
  * @custom:security-contact security@nebula-labs.xyz
  * @custom:copyright Copyright (c) 2025 Nebula Holding Inc. All rights reserved.
  */
@@ -46,6 +46,12 @@ contract LendefiMarketFactory is Initializable, AccessControlUpgradeable, UUPSUp
         uint64 scheduledTime;
         bool exists;
     }
+
+    // ========== ROLES ==========
+
+    /// @notice Role identifier for addresses that can create new markets
+    bytes32 public constant MARKET_OWNER_ROLE = keccak256("MARKET_OWNER_ROLE");
+
     // ========== STATE VARIABLES ==========
 
     /// @notice Version of the factory contract
@@ -87,26 +93,33 @@ contract LendefiMarketFactory is Initializable, AccessControlUpgradeable, UUPSUp
     /// @dev Handles governance token rewards for liquidity providers
     address public ecosystem;
 
-    /// @notice Mapping of base asset addresses to their corresponding market configurations
-    /// @dev Key: base asset address, Value: Market struct containing all market data
-    mapping(address => IPROTOCOL.Market) public markets;
+    /// @notice Nested mapping of market owner to base asset to market configuration
+    /// @dev First key: market owner address, Second key: base asset address, Value: Market struct
+    mapping(address => mapping(address => IPROTOCOL.Market)) public markets;
 
-    /// @notice Array of all base asset addresses for which markets have been created
-    /// @dev Used for enumeration and iteration over all markets
-    address[] public allBaseAssets;
+    /// @notice Mapping to track all base assets for each market owner
+    /// @dev Key: market owner address, Value: array of base asset addresses they've created markets for
+    mapping(address => address[]) public ownerBaseAssets;
+
+    /// @notice Array of all market owners who have created markets
+    /// @dev Used for enumeration and iteration over all market owners
+    address[] public allMarketOwners;
 
     /// @notice Array of all market configurations created by this factory
-    /// @dev Provides direct access to market data without mapping lookups
+    /// @dev Provides direct access to all market data across all owners
     IPROTOCOL.Market[] public allMarkets;
+
     /// @dev Pending upgrade information
     UpgradeRequest public pendingUpgrade;
 
-    // Storage gap reduced to account for new pendingUpgrade variable
-    uint256[16] private __gap;
+    // Storage gap reduced to account for new variables
+    uint256[14] private __gap;
+
     // ========== EVENTS ==========
 
     /**
      * @notice Emitted when a new lending market is successfully created
+     * @param marketOwner The address that owns this market instance
      * @param baseAsset The base asset address for the new market
      * @param core The deployed LendefiCore contract address for this market
      * @param baseVault The deployed LendefiMarketVault contract address for this market
@@ -115,26 +128,29 @@ contract LendefiMarketFactory is Initializable, AccessControlUpgradeable, UUPSUp
      * @param porFeed The deployed Proof of Reserves feed address for this market
      */
     event MarketCreated(
+        address indexed marketOwner,
         address indexed baseAsset,
-        address indexed core,
-        address indexed baseVault,
+        address core,
+        address baseVault,
         string name,
         string symbol,
         address porFeed
     );
 
     /**
-     * @notice Emitted when market information is updated (reserved for future use)
+     * @notice Emitted when market information is updated
+     * @param marketOwner The address that owns the market being updated
      * @param baseAsset The base asset address of the updated market
      * @param marketInfo The updated market configuration data
      */
-    event MarketUpdated(address indexed baseAsset, IPROTOCOL.Market marketInfo);
+    event MarketUpdated(address indexed marketOwner, address indexed baseAsset, IPROTOCOL.Market marketInfo);
 
     /**
-     * @notice Emitted when a market is removed or deactivated (reserved for future use)
+     * @notice Emitted when a market is removed or deactivated
+     * @param marketOwner The address that owns the market being removed
      * @param baseAsset The base asset address of the removed market
      */
-    event MarketRemoved(address indexed baseAsset);
+    event MarketRemoved(address indexed marketOwner, address indexed baseAsset);
 
     /**
      * @notice Emitted when implementation contracts are updated by admin
@@ -171,7 +187,7 @@ contract LendefiMarketFactory is Initializable, AccessControlUpgradeable, UUPSUp
 
     // ========== ERRORS ==========
 
-    /// @notice Thrown when attempting to create a market for an asset that already has one
+    /// @notice Thrown when attempting to create a market for an owner/asset pair that already exists
     error MarketAlreadyExists();
 
     /// @notice Thrown when a required address parameter is the zero address
@@ -303,15 +319,16 @@ contract LendefiMarketFactory is Initializable, AccessControlUpgradeable, UUPSUp
     // ========== MARKET MANAGEMENT ==========
 
     /**
-     * @notice Creates a new lending market for a specified base asset
+     * @notice Creates a new lending market for the caller and specified base asset
      * @dev Deploys a complete lending market infrastructure including:
      *      1. LendefiCore contract (cloned from implementation)
      *      2. LendefiMarketVault contract (cloned from implementation)
      *      3. Proof of Reserves feed (cloned from implementation)
      *      4. Proper initialization and cross-contract linking
      *
-     *      The function creates isolated lending markets where each base asset
+     *      Each market owner can create their own isolated lending markets where each base asset
      *      operates independently with its own liquidity pools and risk parameters.
+     *      The caller (msg.sender) becomes the market owner.
      *
      * @param baseAsset The ERC20 token address that will serve as the base asset for lending
      * @param name The name for the ERC4626 yield token (e.g., "Lendefi USDC Yield Token")
@@ -319,102 +336,123 @@ contract LendefiMarketFactory is Initializable, AccessControlUpgradeable, UUPSUp
      *
      * @custom:requirements
      *   - baseAsset must be a valid ERC20 token address (non-zero)
-     *   - Market for this baseAsset must not already exist
+     *   - Market for this caller/baseAsset pair must not already exist
      *   - Implementation contracts must be set before calling this function
-     *   - Caller must have DEFAULT_ADMIN_ROLE
+     *   - Caller must have MARKET_OWNER_ROLE
      *
      * @custom:state-changes
-     *   - Creates new market entry in markets mapping
-     *   - Adds baseAsset to allBaseAssets array
+     *   - Creates new market entry in nested markets mapping
+     *   - Adds baseAsset to ownerBaseAssets mapping for the caller
+     *   - Adds caller to allMarketOwners array (if first market)
      *   - Adds market info to allMarkets array
      *   - Deploys multiple new contract instances
      *
      * @custom:emits MarketCreated event with all deployed contract addresses
-     * @custom:access-control Restricted to DEFAULT_ADMIN_ROLE
+     * @custom:access-control Restricted to MARKET_OWNER_ROLE
      * @custom:error-cases
      *   - ZeroAddress: When baseAsset is the zero address
-     *   - MarketAlreadyExists: When market for this asset already exists
+     *   - MarketAlreadyExists: When market for this caller/asset pair already exists
      *   - CloneDeploymentFailed: When any contract clone deployment fails
      */
     function createMarket(address baseAsset, string memory name, string memory symbol)
         external
-        onlyRole(DEFAULT_ADMIN_ROLE)
+        onlyRole(MARKET_OWNER_ROLE)
     {
+        address marketOwner = msg.sender;
         if (baseAsset == address(0)) revert ZeroAddress();
-        if (markets[baseAsset].core != address(0)) revert MarketAlreadyExists();
+        if (markets[marketOwner][baseAsset].core != address(0)) revert MarketAlreadyExists();
 
+        // Deploy core and vault contracts
+        (address coreProxy, address vaultProxy) = _deployContracts(baseAsset, name, symbol);
+
+        // Deploy and initialize PoR feed
+        address porFeedClone = _deployPoRFeed(baseAsset);
+
+        // Create and store market configuration
+        _storeMarket(marketOwner, baseAsset, coreProxy, vaultProxy, porFeedClone, name, symbol);
+
+        // Initialize the core contract with market information
+        LendefiCore(payable(coreProxy)).initializeMarket(markets[marketOwner][baseAsset]);
+
+        emit MarketCreated(marketOwner, baseAsset, coreProxy, vaultProxy, name, symbol, porFeedClone);
+    }
+
+    /**
+     * @dev Internal function to deploy core and vault contracts
+     */
+    function _deployContracts(address baseAsset, string memory name, string memory symbol)
+        internal
+        returns (address coreProxy, address vaultProxy)
+    {
         // Create core contract using minimal proxy pattern
         address core = coreImplementation.clone();
-        // Verify clone was successful
-        if (core == address(0)) revert CloneDeploymentFailed();
-        if (core.code.length == 0) revert CloneDeploymentFailed();
+        if (core == address(0) || core.code.length == 0) revert CloneDeploymentFailed();
 
         // Initialize core contract through proxy
         bytes memory initData = abi.encodeWithSelector(
-            LendefiCore.initialize.selector,
-            timelock, // admin
-            govToken, // Use stored govToken
-            assetsModule, // assetsModule
-            treasury, // treasury
-            positionVaultImplementation // position vault implementation for user vaults
+            LendefiCore.initialize.selector, timelock, govToken, assetsModule, treasury, positionVaultImplementation
         );
-        address payable proxy = payable(new TransparentUpgradeableProxy(address(core), address(timelock), initData));
-        LendefiCore coreInstance = LendefiCore(payable(address(proxy)));
+        coreProxy = address(new TransparentUpgradeableProxy(core, timelock, initData));
 
         // Create vault contract using minimal proxy pattern
         address baseVault = vaultImplementation.clone();
-        // Verify clone was successful
-        if (baseVault == address(0)) revert CloneDeploymentFailed();
-        if (baseVault.code.length == 0) revert CloneDeploymentFailed();
+        if (baseVault == address(0) || baseVault.code.length == 0) revert CloneDeploymentFailed();
 
         // Initialize vault contract through proxy
         bytes memory vaultData = abi.encodeCall(
-            LendefiMarketVault.initialize,
-            (timelock, address(coreInstance), baseAsset, ecosystem, assetsModule, name, symbol)
+            LendefiMarketVault.initialize, (timelock, coreProxy, baseAsset, ecosystem, assetsModule, name, symbol)
         );
-        address payable vaultProxy =
-            payable(new TransparentUpgradeableProxy(address(baseVault), address(timelock), vaultData));
+        vaultProxy = address(new TransparentUpgradeableProxy(baseVault, timelock, vaultData));
+    }
 
-        LendefiMarketVault vaultInstance = LendefiMarketVault(payable(address(vaultProxy)));
+    /**
+     * @dev Internal function to deploy and initialize PoR feed
+     */
+    function _deployPoRFeed(address baseAsset) internal returns (address porFeedClone) {
+        porFeedClone = porFeed.clone();
+        if (porFeedClone == address(0) || porFeedClone.code.length == 0) revert CloneDeploymentFailed();
 
-        // Create Proof of Reserves feed
-        address porFeedClone = porFeed.clone();
-        // Verify clone was successful
-        if (porFeedClone == address(0)) revert CloneDeploymentFailed();
-        if (porFeedClone.code.length == 0) revert CloneDeploymentFailed();
-
-        // Initialize PoR feed
         IPoRFeed(porFeedClone).initialize(baseAsset, timelock, timelock);
+    }
 
+    /**
+     * @dev Internal function to store market configuration
+     */
+    function _storeMarket(
+        address marketOwner,
+        address baseAsset,
+        address coreProxy,
+        address vaultProxy,
+        address porFeedClone,
+        string memory name,
+        string memory symbol
+    ) internal {
         // Create market configuration struct
         IPROTOCOL.Market memory marketInfo = IPROTOCOL.Market({
-            core: address(coreInstance),
-            baseVault: address(vaultInstance),
+            core: coreProxy,
+            baseVault: vaultProxy,
             baseAsset: baseAsset,
             porFeed: porFeedClone,
             decimals: IERC20Metadata(baseAsset).decimals(),
-            name: name, // Name for the yield token
-            symbol: symbol, // Symbol for the yield token
+            name: name,
+            symbol: symbol,
             createdAt: block.timestamp,
             active: true
         });
 
-        // Initialize the core contract with market information
-        coreInstance.initializeMarket(marketInfo);
+        // Store market information in nested mapping
+        markets[marketOwner][baseAsset] = marketInfo;
 
-        // Store market information in contract state
-        markets[marketInfo.baseAsset] = marketInfo;
-        allBaseAssets.push(marketInfo.baseAsset);
+        // Track base assets for this owner
+        ownerBaseAssets[marketOwner].push(baseAsset);
+
+        // Track unique market owners (only add if this is their first market)
+        if (ownerBaseAssets[marketOwner].length == 1) {
+            allMarketOwners.push(marketOwner);
+        }
+
+        // Add to global markets array
         allMarkets.push(marketInfo);
-
-        emit MarketCreated(
-            marketInfo.baseAsset,
-            address(coreInstance),
-            address(vaultInstance),
-            marketInfo.name,
-            marketInfo.symbol,
-            marketInfo.porFeed
-        );
     }
 
     /**
@@ -458,70 +496,209 @@ contract LendefiMarketFactory is Initializable, AccessControlUpgradeable, UUPSUp
             : 0;
     }
 
+    // ========== VIEW FUNCTIONS ==========
+
     /**
-     * @notice Retrieves complete market information for a given base asset
+     * @notice Retrieves complete market information for a given market owner and base asset
      * @dev Returns the full Market struct containing all deployed contract addresses
-     *      and configuration data for the specified base asset's lending market.
+     *      and configuration data for the specified market.
+     * @param marketOwner Address of the market owner
      * @param baseAsset Address of the base asset to query market information for
      * @return Market configuration struct containing all market data
      *
      * @custom:requirements
+     *   - marketOwner must be a valid address (non-zero)
      *   - baseAsset must be a valid address (non-zero)
-     *   - Market for the specified baseAsset must exist
+     *   - Market for the specified marketOwner/baseAsset pair must exist
      *
      * @custom:access-control Available to any caller (view function)
      * @custom:error-cases
-     *   - ZeroAddress: When baseAsset is the zero address
-     *   - MarketNotFound: When no market exists for the specified base asset
+     *   - ZeroAddress: When marketOwner or baseAsset is the zero address
+     *   - MarketNotFound: When no market exists for the specified owner/asset pair
      */
-    function getMarketInfo(address baseAsset) external view returns (IPROTOCOL.Market memory) {
-        if (baseAsset == address(0)) revert ZeroAddress();
-        if (markets[baseAsset].core == address(0)) revert MarketNotFound();
+    function getMarketInfo(address marketOwner, address baseAsset) external view returns (IPROTOCOL.Market memory) {
+        if (marketOwner == address(0) || baseAsset == address(0)) revert ZeroAddress();
+        if (markets[marketOwner][baseAsset].core == address(0)) revert MarketNotFound();
 
-        return markets[baseAsset];
+        return markets[marketOwner][baseAsset];
     }
 
     /**
-     * @notice Checks if a market is currently active for the specified base asset
+     * @notice Checks if a market is currently active for the specified owner and base asset
      * @dev Returns the active status flag from the market configuration.
      *      Markets can be deactivated for maintenance or emergency purposes.
+     * @param marketOwner Address of the market owner
      * @param baseAsset Address of the base asset to check
      * @return bool True if the market is active, false if inactive or non-existent
      *
      * @custom:access-control Available to any caller (view function)
      */
-    function isMarketActive(address baseAsset) external view returns (bool) {
-        return markets[baseAsset].active;
+    function isMarketActive(address marketOwner, address baseAsset) external view returns (bool) {
+        return markets[marketOwner][baseAsset].active;
     }
 
     /**
-     * @notice Returns an array of all base asset addresses with active markets
-     * @dev Filters through all created markets and returns only those marked as active.
-     *      Uses assembly optimization to resize the returned array to the exact count
-     *      of active markets, avoiding empty array elements.
-     * @return address[] Array containing base asset addresses of all active markets
+     * @notice Returns all markets created by a specific owner
+     * @dev Retrieves all market configurations for a given market owner
+     * @param marketOwner Address of the market owner to query
+     * @return Array of Market structs for all markets owned by the specified address
      *
-     * @custom:gas-optimization Uses assembly to efficiently resize the returned array
      * @custom:access-control Available to any caller (view function)
      */
-    function getAllActiveMarkets() external view returns (address[] memory) {
-        address[] memory activeMarkets = new address[](allBaseAssets.length);
-        uint256 count = 0;
+    function getOwnerMarkets(address marketOwner) external view returns (IPROTOCOL.Market[] memory) {
+        address[] memory baseAssets = ownerBaseAssets[marketOwner];
+        IPROTOCOL.Market[] memory ownerMarkets = new IPROTOCOL.Market[](baseAssets.length);
 
-        for (uint256 i = 0; i < allBaseAssets.length; i++) {
-            address baseAsset = allBaseAssets[i];
-            if (markets[baseAsset].active) {
-                activeMarkets[count] = baseAsset;
-                count++;
+        for (uint256 i = 0; i < baseAssets.length; i++) {
+            ownerMarkets[i] = markets[marketOwner][baseAssets[i]];
+        }
+
+        return ownerMarkets;
+    }
+
+    /**
+     * @notice Returns all base assets for which a specific owner has created markets
+     * @dev Retrieves the list of base asset addresses for a given market owner
+     * @param marketOwner Address of the market owner to query
+     * @return Array of base asset addresses
+     *
+     * @custom:access-control Available to any caller (view function)
+     */
+    function getOwnerBaseAssets(address marketOwner) external view returns (address[] memory) {
+        return ownerBaseAssets[marketOwner];
+    }
+
+    /**
+     * @notice Returns all active markets across all owners
+     * @dev Filters through all created markets and returns only those marked as active.
+     * @return Array containing Market structs of all active markets
+     *
+     * @custom:gas-considerations This function iterates through all owners and markets,
+     *                            which can be gas-intensive with many markets
+     * @custom:access-control Available to any caller (view function)
+     */
+    function getAllActiveMarkets() external view returns (IPROTOCOL.Market[] memory) {
+        uint256 totalCount = 0;
+
+        // First, count active markets
+        for (uint256 i = 0; i < allMarketOwners.length; i++) {
+            address owner = allMarketOwners[i];
+            address[] memory baseAssets = ownerBaseAssets[owner];
+
+            for (uint256 j = 0; j < baseAssets.length; j++) {
+                if (markets[owner][baseAssets[j]].active) {
+                    totalCount++;
+                }
             }
         }
 
-        // Resize the array to the actual number of active markets using assembly
-        assembly {
-            mstore(activeMarkets, count)
+        // Then populate the array
+        IPROTOCOL.Market[] memory activeMarkets = new IPROTOCOL.Market[](totalCount);
+        uint256 index = 0;
+
+        for (uint256 i = 0; i < allMarketOwners.length; i++) {
+            address owner = allMarketOwners[i];
+            address[] memory baseAssets = ownerBaseAssets[owner];
+
+            for (uint256 j = 0; j < baseAssets.length; j++) {
+                if (markets[owner][baseAssets[j]].active) {
+                    activeMarkets[index] = markets[owner][baseAssets[j]];
+                    index++;
+                }
+            }
         }
 
         return activeMarkets;
+    }
+
+    /**
+     * @notice Returns the total number of market owners
+     * @dev Returns the length of the allMarketOwners array
+     * @return Total number of unique market owners
+     *
+     * @custom:access-control Available to any caller (view function)
+     */
+    function getMarketOwnersCount() external view returns (uint256) {
+        return allMarketOwners.length;
+    }
+
+    /**
+     * @notice Returns a market owner address by index
+     * @dev Retrieves an owner address from the allMarketOwners array
+     * @param index The index of the owner to retrieve
+     * @return Address of the market owner at the specified index
+     *
+     * @custom:requirements
+     *   - index must be less than allMarketOwners.length
+     *
+     * @custom:access-control Available to any caller (view function)
+     */
+    function getMarketOwnerByIndex(uint256 index) external view returns (address) {
+        require(index < allMarketOwners.length, "Index out of bounds");
+        return allMarketOwners[index];
+    }
+
+    /**
+     * @notice Returns the total number of markets created across all owners
+     * @dev Returns the length of the allMarkets array
+     * @return Total number of markets created
+     *
+     * @custom:access-control Available to any caller (view function)
+     */
+    function getTotalMarketsCount() external view returns (uint256) {
+        return allMarkets.length;
+    }
+
+    // ========== BACKWARD COMPATIBILITY FUNCTIONS ==========
+
+    /**
+     * @notice Backward compatibility function for single-tenant market access
+     * @dev Looks for market owned by any owner - returns first found (for legacy test compatibility)
+     * @param baseAsset Address of the base asset
+     * @return Market configuration struct
+     */
+    function getMarketInfo(address baseAsset) external view returns (IPROTOCOL.Market memory) {
+        // Look through all market owners to find this base asset
+        for (uint256 i = 0; i < allMarketOwners.length; i++) {
+            address owner = allMarketOwners[i];
+            if (markets[owner][baseAsset].core != address(0)) {
+                return markets[owner][baseAsset];
+            }
+        }
+        revert MarketNotFound();
+    }
+
+    /**
+     * @notice Backward compatibility function for checking market active status
+     * @dev Looks for market owned by any owner - returns first found (for legacy test compatibility)
+     * @param baseAsset Address of the base asset
+     * @return True if market is active
+     */
+    function isMarketActive(address baseAsset) external view returns (bool) {
+        // Look through all market owners to find this base asset
+        for (uint256 i = 0; i < allMarketOwners.length; i++) {
+            address owner = allMarketOwners[i];
+            if (markets[owner][baseAsset].core != address(0)) {
+                return markets[owner][baseAsset].active;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * @notice Backward compatibility function that returns base asset addresses
+     * @dev For tests that expect address[] instead of Market[]
+     * @return Array of base asset addresses for active markets
+     */
+    function getAllActiveMarketsAddresses() external view returns (address[] memory) {
+        IPROTOCOL.Market[] memory activeMarkets = this.getAllActiveMarkets();
+        address[] memory addresses = new address[](activeMarkets.length);
+
+        for (uint256 i = 0; i < activeMarkets.length; i++) {
+            addresses[i] = activeMarkets[i].baseAsset;
+        }
+
+        return addresses;
     }
 
     // ========== UUPS UPGRADE AUTHORIZATION ==========
