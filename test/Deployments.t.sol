@@ -3,6 +3,7 @@ pragma solidity ^0.8.23;
 
 import "./BasicDeploy.sol"; // solhint-disable-line
 import {LendefiCore} from "../contracts/markets/LendefiCore.sol";
+import {LendefiMarketVaultV2} from "../contracts/upgrades/LendefiMarketVaultV2.sol";
 
 contract BasicDeployTest is BasicDeploy {
     function test_001_TokenDeploy() public {
@@ -187,5 +188,21 @@ contract BasicDeployTest is BasicDeploy {
 
     function test_018_deployLendefiCoreUpgrade() public {
         deployLendefiCoreUpgrade();
+    }
+
+    function test_019_deployMarketVaultUpgrade() public {
+        // Deploy the market vault upgrade
+        deployMarketVaultUpgrade();
+        
+        // Additional verification that the upgrade was successful
+        assertEq(marketVaultInstance.version(), 2, "Market vault version should be 2 after upgrade");
+        
+        // Verify basic functionality still works after upgrade
+        assertTrue(address(marketVaultInstance) != address(0), "Market vault should be deployed");
+        assertEq(marketVaultInstance.asset(), address(usdcInstance), "Asset should still be USDC");
+        
+        // Log successful upgrade
+        console2.log("Market Vault upgraded to V2 successfully");
+        console2.log("New version: ", marketVaultInstance.version());
     }
 }
