@@ -489,7 +489,9 @@ contract LendefiAssets is
         // Update the reserves on the feed
         IPoRFeed(feedAddr).updateReserves(tvl);
         // Calculate USD value
-        usdValue = tvl * getAssetPrice(asset) / LendefiConstants.WAD;
+        uint8 assetDecimals = assetInfo[asset].decimals;
+        uint256 dynamicWAD = 10 ** assetDecimals;
+        usdValue = tvl * getAssetPrice(asset) / dynamicWAD;
     }
 
     /**
