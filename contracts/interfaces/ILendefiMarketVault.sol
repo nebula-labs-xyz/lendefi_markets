@@ -13,7 +13,7 @@ interface ILendefiMarketVault is IERC4626 {
     event YieldBoosted(address indexed user, uint256 amount);
     event Exchange(address indexed user, uint256 shares, uint256 amount);
     event FlashLoan(address indexed user, address indexed receiver, address indexed asset, uint256 amount, uint256 fee);
-    event FlashLoanFeeUpdated(uint256 oldFee, uint256 newFee);
+    event ProtocolConfigUpdated(IPROTOCOL.ProtocolConfig config);
     event Reward(address indexed user, uint256 amount);
 
     // ========== ERRORS ==========
