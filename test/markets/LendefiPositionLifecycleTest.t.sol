@@ -374,4 +374,70 @@ contract LendefiPositionLifecycleTest is Test, BasicDeploy {
         console2.log("Total Base:", snapshot.totalBase / 1e6);
         console2.log("");
     }
+
+    /**
+     * @notice Complete position lifecycle test with REDEEM instead of withdraw
+     * @dev Tests: deposit -> borrow -> yield boost -> repay -> redeem
+     *      Validates all balances and commission collection using redeem function
+     */
+    function test_CompletePositionLifecycleWithRedeem() public {
+        console2.log("=== STARTING POSITION LIFECYCLE TEST WITH REDEEM ===");
+
+        // Position ID for tracking throughout the test
+        uint256 positionId;
+
+        // Step 1: Alice deposits liquidity
+        _step1_AliceDepositsLiquidity();
+
+        // Step 2: Bob borrows against collateral
+        positionId = _step2_BobBorrowsAgainstCollateral();
+
+        // Step 3: Time passes and yield boost occurs
+        _step3_TimePassesAndYieldBoost();
+
+        // Step 4: Bob repays loan
+        _step4_BobRepaysLoan(positionId);
+
+        // Step 5: Bob withdraws collateral
+        _step5_BobWithdrawsCollateral(positionId);
+
+        // Step 6: Alice redeems shares (instead of withdraw)
+        _step6_AliceRedeemsShares();
+
+        // Step 7: Final validation
+        _step7_FinalValidation();
+
+        console2.log("=== POSITION LIFECYCLE TEST WITH REDEEM COMPLETED SUCCESSFULLY ===");
+    }
+
+    function _step6_AliceRedeemsShares() internal {
+        console2.log("\n=== STEP 6: ALICE REDEEMS SHARES ===");
+
+        vm.startPrank(testAlice);
+        vm.roll(block.number + 1);
+        vm.warp(block.timestamp + 1);
+
+        console2.log("Total vault value:", marketVaultInstance.totalBase() / 1e6);
+        console2.log("Alice's shares:", marketVaultInstance.balanceOf(testAlice) / 1e6);
+
+        // Alice redeems all her shares
+        uint256 aliceShares = marketVaultInstance.balanceOf(testAlice);
+        uint256 maxRedeemableShares = marketVaultInstance.maxRedeem(testAlice);
+        console2.log("Max redeemable shares:", maxRedeemableShares / 1e6);
+        
+        // Use the smaller of Alice's balance or max redeemable
+        uint256 sharesToRedeem = aliceShares > maxRedeemableShares ? maxRedeemableShares : aliceShares;
+        
+        // Preview how much USDC Alice will receive
+        uint256 expectedUsdc = marketVaultInstance.previewRedeem(sharesToRedeem);
+        console2.log("Alice redeeming shares:", sharesToRedeem / 1e6);
+        console2.log("Expected USDC from redeem:", expectedUsdc / 1e6);
+        
+        // Redeem shares
+        uint256 receivedUsdc = marketVaultInstance.redeem(sharesToRedeem, testAlice, testAlice);
+        console2.log("Actual USDC received:", receivedUsdc / 1e6);
+        
+        console2.log("Commission shares minted to timelock:", marketVaultInstance.balanceOf(marketVaultInstance.timelock()) / 1e6);
+        vm.stopPrank();
+    }
 }
