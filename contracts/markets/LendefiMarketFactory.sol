@@ -28,10 +28,10 @@ import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
-import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {IPoRFeed} from "../interfaces/IPoRFeed.sol";
 import {LendefiConstants} from "./lib/LendefiConstants.sol";
+import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 
 /// @custom:oz-upgrades
 contract LendefiMarketFactory is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
@@ -358,7 +358,7 @@ contract LendefiMarketFactory is Initializable, AccessControlUpgradeable, UUPSUp
             treasury, // treasury
             positionVaultImplementation // position vault implementation for user vaults
         );
-        ERC1967Proxy proxy = new ERC1967Proxy(address(core), initData);
+        address payable proxy = payable(new TransparentUpgradeableProxy(address(core), address(timelock), initData));
         LendefiCore coreInstance = LendefiCore(payable(address(proxy)));
 
         // Create vault contract using minimal proxy pattern
@@ -372,7 +372,9 @@ contract LendefiMarketFactory is Initializable, AccessControlUpgradeable, UUPSUp
             LendefiMarketVault.initialize,
             (timelock, address(coreInstance), baseAsset, ecosystem, assetsModule, name, symbol)
         );
-        ERC1967Proxy vaultProxy = new ERC1967Proxy(address(baseVault), vaultData);
+        address payable vaultProxy =
+            payable(new TransparentUpgradeableProxy(address(baseVault), address(timelock), vaultData));
+
         LendefiMarketVault vaultInstance = LendefiMarketVault(payable(address(vaultProxy)));
 
         // Create Proof of Reserves feed
