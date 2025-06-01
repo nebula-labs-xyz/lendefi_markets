@@ -166,10 +166,9 @@ contract LendefiMarketVault is
     /// @param fee Fee charged for the flash loan
     event FlashLoan(address indexed user, address indexed receiver, address indexed asset, uint256 amount, uint256 fee);
 
-    /// @notice Emitted when the flash loan fee is updated
-    /// @param oldFee Previous flash loan fee in basis points
-    /// @param newFee New flash loan fee in basis points
-    event FlashLoanFeeUpdated(uint256 oldFee, uint256 newFee);
+    /// @notice Emitted when the protocol configuration is updated
+    /// @param config The new protocol configuration
+    event ProtocolConfigUpdated(IPROTOCOL.ProtocolConfig config);
 
     /// @notice Emitted when governance rewards are claimed by a liquidity provider
     /// @param user Address of the user claiming rewards
@@ -323,31 +322,23 @@ contract LendefiMarketVault is
      * @param _config The new protocol configuration containing updated parameters
      *
      * @custom:requirements
-     *   - Flash loan fee must be between 1 and 100 basis points (0.01% to 1%)
      *   - Caller must have PROTOCOL_ROLE (typically the LendefiCore contract)
      *
      * @custom:state-changes
      *   - Updates the protocolConfig state variable with new configuration
      *
-     * @custom:emits FlashLoanFeeUpdated if the flash loan fee has changed
+     * @custom:emits
+     *   - ProtocolConfigUpdated: Always emitted with the new configuration
      * @custom:access-control Restricted to PROTOCOL_ROLE
-     * @custom:error-cases
-     *   - InvalidFee: When flash loan fee is outside the valid range (1-100 bp)
      */
     function setProtocolConfig(IPROTOCOL.ProtocolConfig calldata _config)
         external
         onlyRole(LendefiConstants.PROTOCOL_ROLE)
     {
-        // Validate flash loan fee
-        if (_config.flashLoanFee > 100 || _config.flashLoanFee < 1) revert InvalidFee(); // Maximum 1% (100 basis points)
-
-        uint32 oldFee = protocolConfig.flashLoanFee;
+        // No validation needed - Core contract already validates before calling this
         protocolConfig = _config;
-
-        // Emit event if flash loan fee changed
-        if (oldFee != _config.flashLoanFee) {
-            emit FlashLoanFeeUpdated(oldFee, _config.flashLoanFee);
-        }
+        // Emit event for protocol config update
+        emit ProtocolConfigUpdated(_config);
     }
 
     // ========== FLASH LOAN FUNCTIONS ==========
@@ -402,7 +393,7 @@ contract LendefiMarketVault is
         if (amount > initialBalance) revert LowLiquidity();
 
         // Calculate fee and record initial balance
-        uint256 fee = (amount * protocolConfig.flashLoanFee) / 10000;
+        uint256 fee = Math.mulDiv(amount, protocolConfig.flashLoanFee, 10000, Math.Rounding.Floor);
         uint256 requiredBalance = initialBalance + fee;
         totalBase += fee;
 
@@ -562,7 +553,7 @@ contract LendefiMarketVault is
             uint256 lastOperationBlock = liquidityOperationBlock[msg.sender];
             uint256 currentBlock = block.number;
             uint256 blocksElapsed = currentBlock - lastOperationBlock;
-            uint256 reward = (config.rewardAmount * blocksElapsed) / config.rewardInterval;
+            uint256 reward = Math.mulDiv(config.rewardAmount, blocksElapsed, config.rewardInterval, Math.Rounding.Floor);
 
             // Apply maximum reward cap using cached ecosystem reference
             uint256 maxReward = cachedEcosystem.maxReward();
@@ -916,7 +907,7 @@ contract LendefiMarketVault is
         uint256 cachedSupply = totalSuppliedLiquidity;
         uint256 cachedBorrow = totalBorrow;
 
-        (cachedSupply == 0 || cachedBorrow == 0) ? u = 0 : u = (baseDecimals * cachedBorrow) / cachedSupply;
+        (cachedSupply == 0 || cachedBorrow == 0) ? u = 0 : u = Math.mulDiv(baseDecimals, cachedBorrow, cachedSupply, Math.Rounding.Floor);
     }
 
     /**
