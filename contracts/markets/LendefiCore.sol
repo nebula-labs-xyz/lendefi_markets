@@ -240,7 +240,7 @@ contract LendefiCore is
 
         // Initialize default parameters using dynamic baseDecimals
         mainConfig = ProtocolConfig({
-            profitTargetRate: 0.01e6, // 1%
+            profitTargetRate: 0.0025e6, // 1%
             borrowRate: 0.06e6, // 6%
             rewardAmount: 2_000 ether, // 2,000 governance tokens
             rewardInterval: 180 * 24 * 60 * 5, // 180 days in blocks
@@ -248,6 +248,9 @@ contract LendefiCore is
             liquidatorThreshold: 20_000 ether, // 20,000 governance tokens
             flashLoanFee: 9 // 9 basis points (0.09%)
         });
+
+        // Update the vault's cached protocol config
+        baseVault.setProtocolConfig(mainConfig);
 
         emit Initialized(marketInfo.baseAsset);
     }
