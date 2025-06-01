@@ -11,7 +11,7 @@ import {WETHPriceConsumerV3} from "../../contracts/mock/WETHOracle.sol";
 import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import {IPROTOCOL} from "../../contracts/interfaces/IProtocol.sol";
 
-contract LendefiMarketVaultTest is BasicDeploy {
+contract LendefiMarketVault_TestTwo is BasicDeploy {
     MockFlashLoanReceiver flashReceiver;
 
     // Constants
