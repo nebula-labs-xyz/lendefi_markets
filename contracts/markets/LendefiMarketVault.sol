@@ -135,7 +135,9 @@ contract LendefiMarketVault is
     /// @dev Used for MEV protection and reward eligibility calculations
     /// @dev Key: User address, Value: Block number of last operation
     mapping(address => uint256) internal liquidityOperationBlock;
-
+    /// @notice Storage gap for future upgrades
+    /// @dev Reserves storage slots for upgradeable contract pattern
+    uint256[10] private __gap;
     // ========== EVENTS ==========
 
     /// @notice Emitted when the vault is successfully initialized
@@ -907,7 +909,9 @@ contract LendefiMarketVault is
         uint256 cachedSupply = totalSuppliedLiquidity;
         uint256 cachedBorrow = totalBorrow;
 
-        (cachedSupply == 0 || cachedBorrow == 0) ? u = 0 : u = Math.mulDiv(baseDecimals, cachedBorrow, cachedSupply, Math.Rounding.Floor);
+        (cachedSupply == 0 || cachedBorrow == 0)
+            ? u = 0
+            : u = Math.mulDiv(baseDecimals, cachedBorrow, cachedSupply, Math.Rounding.Floor);
     }
 
     /**
