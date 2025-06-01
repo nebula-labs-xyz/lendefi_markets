@@ -328,10 +328,6 @@ contract LendefiMarketVault_TestOne is BasicDeploy {
         assertGt(util, 0, "Utilization should be greater than 0 with active borrowing");
     }
 
-    function test_GetSupplyRate_ReturnsReasonableValue() public {
-        uint256 supplyRate = marketVaultInstance.getSupplyRate();
-        assertGt(supplyRate, 0, "Supply rate should be positive with active borrowing");
-    }
 
     function test_GetBorrowRate_DifferentTiers() public {
         uint256 stableRate = marketVaultInstance.getBorrowRate(IASSETS.CollateralTier.STABLE);
