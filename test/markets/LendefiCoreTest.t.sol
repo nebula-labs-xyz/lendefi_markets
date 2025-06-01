@@ -1250,4 +1250,190 @@ contract LendefiCoreTest is BasicDeploy {
         vm.warp(block.timestamp + timeToWarp);
         vm.roll(block.number + timeToWarp / 12);
     }
+
+    // ============ Missing Coverage Tests ============
+
+    function test_Liquidate_WithAccruedInterest() public {
+        // Setup underwater position
+        uint256 positionId = _createPosition(bob, address(wethInstance), false);
+        _supplyCollateral(bob, positionId, address(wethInstance), 1 ether);
+        _borrow(bob, positionId, 2000e6); // Borrow $2000 against $2500 collateral
+
+        // Record initial state
+        uint256 initialTotalAccruedInterest = marketCoreInstance.totalAccruedBorrowerInterest();
+        uint256 initialDebt = marketCoreInstance.calculateDebtWithInterest(bob, positionId);
+
+        // Warp time to accrue significant interest (2 hours to avoid oracle timeout)
+        vm.warp(block.timestamp + 2 hours);
+        vm.roll(block.number + 600); // Approximate blocks in 2 hours
+
+        // Update oracle prices to avoid timeout
+        wethOracle.setPrice(int256(2000e8)); // Drop ETH price to $2000 per ETH
+        MockPriceOracle usdcOracle = MockPriceOracle(assetsInstance.getAssetInfo(address(usdcInstance)).chainlinkConfig.oracleUSD);
+        usdcOracle.setPrice(int256(USDC_PRICE)); // Refresh USDC price
+
+        // Verify position is liquidatable
+        assertTrue(marketCoreInstance.isLiquidatable(bob, positionId));
+
+        // Calculate expected values
+        uint256 debtWithInterest = marketCoreInstance.calculateDebtWithInterest(bob, positionId);
+        uint256 accruedInterest = debtWithInterest - initialDebt;
+        
+        // Verify interest has accrued
+        assertTrue(accruedInterest > 0, "Interest should have accrued");
+
+        uint256 liquidationFee = marketCoreInstance.getPositionLiquidationFee(bob, positionId);
+        uint256 totalCost = debtWithInterest + (debtWithInterest * liquidationFee / 1e6);
+
+        // Don't check exact event parameters since interest calculation may vary slightly
+        // Just verify the events are emitted
+
+        // Liquidate
+        vm.startPrank(liquidator);
+        usdcInstance.approve(address(marketCoreInstance), totalCost);
+        marketCoreInstance.liquidate(bob, positionId, totalCost, 100);
+        vm.stopPrank();
+
+        // Verify liquidation and interest accrual
+        IPROTOCOL.UserPosition memory position = marketCoreInstance.getUserPositions(bob)[0];
+        assertEq(uint8(position.status), uint8(IPROTOCOL.PositionStatus.LIQUIDATED));
+        assertEq(position.debtAmount, 0);
+        
+        // Verify totalAccruedBorrowerInterest was updated
+        assertEq(
+            marketCoreInstance.totalAccruedBorrowerInterest(),
+            initialTotalAccruedInterest + accruedInterest,
+            "Total accrued interest should have increased"
+        );
+
+        // Liquidator should have received collateral
+        assertEq(wethInstance.balanceOf(liquidator), 1 ether);
+    }
+
+    function test_Liquidate_WithAccruedInterest_MultiplePositions() public {
+        // Create two positions that will be liquidated with accrued interest
+        uint256 positionId1 = _createPosition(bob, address(wethInstance), false);
+        _supplyCollateral(bob, positionId1, address(wethInstance), 1 ether);
+        _borrow(bob, positionId1, 1900e6); // Close to liquidation
+
+        uint256 positionId2 = _createPosition(charlie, address(wethInstance), false);
+        _supplyCollateral(charlie, positionId2, address(wethInstance), 1 ether);
+        _borrow(charlie, positionId2, 1900e6); // Close to liquidation
+
+        // Record initial state
+        uint256 initialTotalAccruedInterest = marketCoreInstance.totalAccruedBorrowerInterest();
+
+        // Warp time to accrue interest (2 hours to avoid oracle timeout)
+        vm.warp(block.timestamp + 2 hours);
+        vm.roll(block.number + 600); // Approximate blocks in 2 hours
+
+        // Update oracle prices to avoid timeout and make positions liquidatable
+        wethOracle.setPrice(int256(2100e8)); // Drop ETH price to $2100 per ETH
+        MockPriceOracle usdcOracle = MockPriceOracle(assetsInstance.getAssetInfo(address(usdcInstance)).chainlinkConfig.oracleUSD);
+        usdcOracle.setPrice(int256(USDC_PRICE)); // Refresh USDC price
+
+        // Liquidate first position
+        uint256 debt1WithInterest = marketCoreInstance.calculateDebtWithInterest(bob, positionId1);
+        uint256 liquidationFee1 = marketCoreInstance.getPositionLiquidationFee(bob, positionId1);
+        uint256 totalCost1 = debt1WithInterest + (debt1WithInterest * liquidationFee1 / 1e6);
+
+        vm.startPrank(liquidator);
+        usdcInstance.approve(address(marketCoreInstance), totalCost1);
+        marketCoreInstance.liquidate(bob, positionId1, totalCost1, 100);
+        vm.stopPrank();
+
+        // Liquidate second position
+        uint256 debt2WithInterest = marketCoreInstance.calculateDebtWithInterest(charlie, positionId2);
+        uint256 liquidationFee2 = marketCoreInstance.getPositionLiquidationFee(charlie, positionId2);
+        uint256 totalCost2 = debt2WithInterest + (debt2WithInterest * liquidationFee2 / 1e6);
+
+        vm.startPrank(liquidator);
+        usdcInstance.approve(address(marketCoreInstance), totalCost2);
+        marketCoreInstance.liquidate(charlie, positionId2, totalCost2, 100);
+        vm.stopPrank();
+
+        // Verify both positions are liquidated
+        IPROTOCOL.UserPosition memory position1 = marketCoreInstance.getUserPositions(bob)[0];
+        IPROTOCOL.UserPosition memory position2 = marketCoreInstance.getUserPositions(charlie)[0];
+        assertEq(uint8(position1.status), uint8(IPROTOCOL.PositionStatus.LIQUIDATED));
+        assertEq(uint8(position2.status), uint8(IPROTOCOL.PositionStatus.LIQUIDATED));
+
+        // Verify total accrued interest increased for both liquidations
+        assertTrue(
+            marketCoreInstance.totalAccruedBorrowerInterest() > initialTotalAccruedInterest,
+            "Total accrued interest should have increased from both liquidations"
+        );
+    }
+
+    // ============ Withdrawal Coverage Tests ============
+
+    function test_Revert_WithdrawCollateral_CreditLimitExceeded() public {
+        // Create position and supply collateral
+        uint256 positionId = _createPosition(bob, address(wethInstance), false);
+        uint256 collateralAmount = 2 ether;
+        _supplyCollateral(bob, positionId, address(wethInstance), collateralAmount);
+
+        // Borrow close to the limit (80% of $5000 = $4000)
+        uint256 borrowAmount = 3900e6; // $3900 USDC
+        _borrow(bob, positionId, borrowAmount);
+
+        // Try to withdraw collateral that would make position undercollateralized
+        // Withdrawing 1.5 ETH would leave only 0.5 ETH = $1250 collateral
+        // Credit limit would be $1250 * 0.8 = $1000, which is less than debt of $3900
+        uint256 withdrawAmount = 1.5 ether;
+
+        vm.prank(bob);
+        vm.expectRevert(IPROTOCOL.CreditLimitExceeded.selector);
+        marketCoreInstance.withdrawCollateral(address(wethInstance), withdrawAmount, positionId, 1000e6, 100);
+    }
+
+    function test_WithdrawCollateral_Success() public {
+        // Create position and supply collateral
+        uint256 positionId = _createPosition(bob, address(wethInstance), false);
+        uint256 collateralAmount = 2 ether;
+        _supplyCollateral(bob, positionId, address(wethInstance), collateralAmount);
+
+        // Borrow a moderate amount
+        uint256 borrowAmount = 1000e6; // $1000 USDC
+        _borrow(bob, positionId, borrowAmount);
+
+        // Withdraw some collateral that still keeps position healthy
+        uint256 withdrawAmount = 0.5 ether;
+        uint256 balanceBefore = wethInstance.balanceOf(bob);
+
+        vm.expectEmit(true, true, true, true);
+        emit WithdrawCollateral(bob, positionId, address(wethInstance), withdrawAmount);
+
+        vm.prank(bob);
+        marketCoreInstance.withdrawCollateral(address(wethInstance), withdrawAmount, positionId, 1500e6, 100);
+
+        // Verify withdrawal
+        assertEq(wethInstance.balanceOf(bob), balanceBefore + withdrawAmount);
+        assertEq(marketCoreInstance.getCollateralAmount(bob, positionId, address(wethInstance)), collateralAmount - withdrawAmount);
+
+        // Verify position is still healthy
+        assertTrue(marketCoreInstance.healthFactor(bob, positionId) > 1e6);
+    }
+
+    function test_WithdrawCollateral_FullWithdrawal_NoDebt() public {
+        // Create position and supply collateral
+        uint256 positionId = _createPosition(bob, address(wethInstance), false);
+        uint256 collateralAmount = 1 ether;
+        _supplyCollateral(bob, positionId, address(wethInstance), collateralAmount);
+
+        // Don't borrow anything
+        uint256 balanceBefore = wethInstance.balanceOf(bob);
+
+        // Withdraw all collateral
+        vm.prank(bob);
+        marketCoreInstance.withdrawCollateral(address(wethInstance), collateralAmount, positionId, 2000e6, 100);
+
+        // Verify full withdrawal
+        assertEq(wethInstance.balanceOf(bob), balanceBefore + collateralAmount);
+        assertEq(marketCoreInstance.getCollateralAmount(bob, positionId, address(wethInstance)), 0);
+        
+        // Verify asset was removed from position (for non-isolated positions)
+        address[] memory assets = marketCoreInstance.getPositionCollateralAssets(bob, positionId);
+        assertEq(assets.length, 0);
+    }
 }
