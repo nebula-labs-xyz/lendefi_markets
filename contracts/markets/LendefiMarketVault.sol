@@ -735,10 +735,12 @@ contract LendefiMarketVault is
 
         // Calculate and collect fees before withdrawal
         uint256 fee = _calculateVirtualFeeShares();
+        uint256 totalSharesBeforeWithdraw = totalSupply();
 
         uint256 shares = super.withdraw(amount, receiver, owner);
+        uint256 baseAmount = Math.mulDiv(shares, totalSuppliedLiquidity, totalSharesBeforeWithdraw, Math.Rounding.Floor);
         totalBase -= amount;
-        totalSuppliedLiquidity -= amount;
+        totalSuppliedLiquidity -= baseAmount;
 
         if (fee > 0) {
             _mint(timelock, fee);
@@ -792,10 +794,14 @@ contract LendefiMarketVault is
 
         // Calculate and collect fees before redemption
         uint256 fee = _calculateVirtualFeeShares();
+        uint256 totalSharesBeforeRedeem = totalSupply();
 
         uint256 amount = super.redeem(shares, receiver, owner);
+
         totalBase -= amount;
-        totalSuppliedLiquidity -= amount;
+        // Calculate proportional reduction in supplied liquidity
+        uint256 baseAmount = Math.mulDiv(totalSuppliedLiquidity, shares, totalSharesBeforeRedeem, Math.Rounding.Floor);
+        totalSuppliedLiquidity -= baseAmount;
 
         if (fee > 0) {
             _mint(timelock, fee);
@@ -836,6 +842,7 @@ contract LendefiMarketVault is
     {
         if (totalBorrow + amount > totalSuppliedLiquidity) revert LowLiquidity();
         totalBorrow += amount;
+
         borrowerDebt[receiver] += amount; // Track by actual borrower
         IERC20(asset()).safeTransfer(receiver, amount);
     }
@@ -875,8 +882,9 @@ contract LendefiMarketVault is
 
         totalBorrow -= principalRepaid;
         borrowerDebt[sender] -= principalRepaid;
-        totalBase += amount;
+
         totalAccruedInterest += interestPaid;
+        totalBase += interestPaid;
 
         // Cache asset address to avoid external call
         IERC20(asset()).safeTransferFrom(msg.sender, address(this), amount);
@@ -942,24 +950,18 @@ contract LendefiMarketVault is
     }
 
     /**
-     * @notice Calculates the current annual supply interest rate for liquidity providers
-     * @dev Computes the interest rate that liquidity providers earn on their deposits.
-     *      The rate is based on protocol utilization, fees, and available liquidity.
-     *      Higher utilization typically results in higher supply rates.
-     * @return The annual supply interest rate scaled by baseDecimals (e.g., 0.05e6 = 5% APR)
-     *
-     * @custom:formula Based on LendefiRates library calculation
-     * @custom:factors
-     *   - Total vault shares outstanding
-     *   - Total borrowed amount
-     *   - Total supplied liquidity
-     *   - Protocol profit target rate
-     *   - Total assets in vault
+     * @notice Calculates the current supply interest rate for liquidity providers
+     * @dev Uses ERC4626's previewRedeem to calculate the current value of shares.
+     *      This automatically accounts for commission through virtual fee shares.
+     * @return The current annual supply interest rate in parts per million (1e6 = 100%)
      */
     function getSupplyRate() public view returns (uint256) {
-        return LendefiRates.getSupplyRate(
-            totalSupply(), totalBorrow, totalSuppliedLiquidity, protocolConfig.profitTargetRate, totalAssets()
-        );
+        uint256 supply = totalSupply();
+        if (supply == 0) return 0;
+
+        // Calculate the current value of 1 share unit (using baseDecimals precision)
+        uint256 shareValue = previewRedeem(baseDecimals);
+        return shareValue <= baseDecimals ? 0 : shareValue - baseDecimals;
     }
 
     /**
