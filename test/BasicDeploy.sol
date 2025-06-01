@@ -40,6 +40,7 @@ import {LendefiMarketFactoryV2} from "../contracts/upgrades/LendefiMarketFactory
 import {LendefiCore} from "../contracts/markets/LendefiCore.sol";
 import {LendefiCoreV2} from "../contracts/upgrades/LendefiCoreV2.sol";
 import {LendefiMarketVault} from "../contracts/markets/LendefiMarketVault.sol";
+import {LendefiMarketVaultV2} from "../contracts/upgrades/LendefiMarketVaultV2.sol";
 import {LendefiPositionVault} from "../contracts/markets/LendefiPositionVault.sol";
 import {LendefiPoRFeed} from "../contracts/markets/LendefiPoRFeed.sol";
 
@@ -877,5 +878,69 @@ contract BasicDeploy is Test {
         assertTrue(
             coreInstanceV2.hasRole(DEFAULT_ADMIN_ROLE, address(timelockInstance)), "Should have DEFAULT_ADMIN_ROLE"
         );
+    }
+
+    /**
+     * @notice Upgrades the LendefiMarketVault implementation using ERC1967Proxy pattern
+     * @dev Follows the same pattern as deployLendefiCoreUpgrade but for market vault
+     */
+    function deployMarketVaultUpgrade() internal {
+        // Deploy base contracts first
+        deployComplete();
+        _deployAssetsModule();
+        
+        // Deploy a mock USDC if needed
+        if (address(usdcInstance) == address(0)) {
+            usdcInstance = new USDC();
+        }
+        
+        // Deploy a core implementation for testing
+        LendefiCore coreImpl = new LendefiCore();
+        
+        // Correct parameters for LendefiMarketVault.initialize
+        bytes memory initData = abi.encodeWithSelector(
+            LendefiMarketVault.initialize.selector,
+            address(timelockInstance),    // _timelock
+            address(coreImpl),           // core 
+            address(usdcInstance),       // baseAsset
+            address(ecoInstance),        // _ecosystem
+            address(assetsInstance),     // _assetsModule
+            "Test Vault",               // name
+            "TV"                        // symbol
+        );
+
+        address payable proxy = payable(Upgrades.deployUUPSProxy("LendefiMarketVault.sol", initData));
+        LendefiMarketVault vaultInstance = LendefiMarketVault(proxy);
+        address vaultImplementation = Upgrades.getImplementationAddress(proxy);
+        assertFalse(address(vaultInstance) == vaultImplementation);
+        
+        // Get the current implementation address
+        address implAddressV1 = Upgrades.getImplementationAddress(proxy);
+
+        // Upgrade using Upgrades.upgradeProxy
+        vm.startPrank(address(timelockInstance));
+        Upgrades.upgradeProxy(proxy, "LendefiMarketVaultV2.sol", "", address(timelockInstance));
+        vm.stopPrank();
+
+        // Get the new implementation address
+        address implAddressV2 = Upgrades.getImplementationAddress(proxy);
+        LendefiMarketVaultV2 marketVaultInstanceV2 = LendefiMarketVaultV2(proxy);
+
+        // Verify the upgrade worked correctly
+        assertFalse(implAddressV2 == implAddressV1, "Implementation address didn't change");
+        assertEq(marketVaultInstanceV2.version(), 2, "Version not incremented to 2");
+
+        // Verify roles are maintained
+        assertTrue(
+            marketVaultInstanceV2.hasRole(DEFAULT_ADMIN_ROLE, address(timelockInstance)),
+            "Should have DEFAULT_ADMIN_ROLE"
+        );
+        assertTrue(
+            marketVaultInstanceV2.hasRole(UPGRADER_ROLE, address(timelockInstance)), 
+            "Should have UPGRADER_ROLE"
+        );
+
+        // Update the marketVaultInstance reference to the upgraded version
+        marketVaultInstance = LendefiMarketVault(proxy);
     }
 }
