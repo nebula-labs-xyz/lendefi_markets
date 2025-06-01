@@ -121,6 +121,7 @@ contract LendefiAssetsV2 is
      * @param timelock_ Address of the timelock_ contract that will have admin privileges
      * @param multisig Address of the multisig wallet for emergency controls
      * @param usdc_ USDC address
+     * @param porFeed_ Proof of Reserve feed address
      * @custom:security Sets up the initial access control roles:
      * - DEFAULT_ADMIN_ROLE: timelock_
      * - MANAGER_ROLE: timelock_
@@ -341,7 +342,7 @@ contract LendefiAssetsV2 is
             if (config.porFeed.code.length == 0) revert CloneDeploymentFailed();
             IPoRFeed(config.porFeed).initialize(asset, address(this), timelock);
         } else {
-            if (config.porFeed == assetInfo[asset].porFeed) revert InvalidParameter("porFeed", 0);
+            if (config.porFeed != assetInfo[asset].porFeed) revert InvalidParameter("porFeed", 0);
         }
 
         assetInfo[asset] = config;
@@ -465,6 +466,7 @@ contract LendefiAssetsV2 is
     /**
      * @notice Gets the price from the Chainlink oracle
      * @param asset The asset to get price for
+     * @param tvl The total value locked for the asset
      * @return usdValue The price in USD (scaled by 1e8)
      */
     function updateAssetPoRFeed(address asset, uint256 tvl)
@@ -477,7 +479,9 @@ contract LendefiAssetsV2 is
         // Update the reserves on the feed
         IPoRFeed(feedAddr).updateReserves(tvl);
         // Calculate USD value
-        usdValue = tvl * getAssetPrice(asset) / LendefiConstants.WAD;
+        uint8 assetDecimals = assetInfo[asset].decimals;
+        uint256 dynamicWAD = 10 ** assetDecimals;
+        usdValue = tvl * getAssetPrice(asset) / dynamicWAD;
     }
 
     /**
@@ -516,12 +520,12 @@ contract LendefiAssetsV2 is
 
         return _getChainlinkPrice(asset);
     }
+
     /**
      * @notice Returns the remaining time before a scheduled upgrade can be executed
      * @dev Returns 0 if no upgrade is scheduled or if the timelock has expired
      * @return timeRemaining The time remaining in seconds
      */
-
     function upgradeTimelockRemaining() external view returns (uint256) {
         return pendingUpgrade.exists
             && block.timestamp < pendingUpgrade.scheduledTime + LendefiConstants.UPGRADE_TIMELOCK_DURATION
@@ -534,7 +538,7 @@ contract LendefiAssetsV2 is
      * @dev Combines multiple data points into a single view call
      * @param asset The address of the asset to query
      * @return price Current oracle price of the asset
-     * @return totalSupplied Total amount of asset supplied to protocol
+     * @return tvl Total value locked for the asset
      * @return maxSupply Maximum supply threshold for the asset
      * @return tier Collateral tier classification
      * @custom:validation Asset must be listed
@@ -543,7 +547,7 @@ contract LendefiAssetsV2 is
         external
         view
         onlyListedAsset(asset)
-        returns (uint256 price, uint256 totalSupplied, uint256 maxSupply, CollateralTier tier)
+        returns (uint256 price, uint256 tvl, uint256 maxSupply, CollateralTier tier)
     {
         // Direct storage access instead of copying entire struct
         maxSupply = assetInfo[asset].maxSupplyThreshold;
@@ -553,7 +557,7 @@ contract LendefiAssetsV2 is
         price = getAssetPrice(asset);
 
         // Get total supplied from protocol
-        (totalSupplied,,) = lendefiInstance.getAssetTVL(asset);
+        (tvl,,) = lendefiInstance.getAssetTVL(asset);
     }
 
     /**
@@ -595,19 +599,19 @@ contract LendefiAssetsV2 is
     /**
      * @notice Checks if supplying an amount would exceed asset capacity
      * @param asset The asset address to check
-     * @param additionalAmount The amount to be supplied
-     * @param tvl Current total value locked for the asset
+     * @param amount The amount to be supplied
+     * @param tvl The total value locked for the asset
      * @return true if supply would exceed maximum threshold
      * @custom:validation Asset must be listed
      */
-    function isAssetAtCapacity(address asset, uint256 additionalAmount, uint256 tvl)
+    function isAssetAtCapacity(address asset, uint256 amount, uint256 tvl)
         external
         view
         onlyListedAsset(asset)
         returns (bool)
     {
         // Check standard supply cap
-        if (tvl + additionalAmount > assetInfo[asset].maxSupplyThreshold) {
+        if (tvl + amount > assetInfo[asset].maxSupplyThreshold) {
             return true;
         }
 
