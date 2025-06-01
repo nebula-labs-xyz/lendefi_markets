@@ -913,7 +913,7 @@ contract LendefiCore is
         uint256 debt = calculateDebtWithInterest(user, positionId);
         if (debt == 0) return type(uint256).max;
         (, uint256 liqLevel,) = calculateLimits(user, positionId);
-        return (liqLevel * baseDecimals) / debt;
+        return Math.mulDiv(liqLevel, baseDecimals, debt, Math.Rounding.Floor);
     }
 
     /**
@@ -1209,7 +1209,7 @@ contract LendefiCore is
         }
 
         uint256 liquidationFee = getPositionLiquidationFee(user, positionId);
-        uint256 fee = ((debtWithInterest * liquidationFee) / baseDecimals);
+        uint256 fee = Math.mulDiv(debtWithInterest, liquidationFee, baseDecimals, Math.Rounding.Floor);
         totalCost = debtWithInterest + fee;
 
         // Slippage protection on total liquidation cost
