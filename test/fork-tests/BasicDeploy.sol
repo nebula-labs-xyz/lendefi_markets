@@ -794,12 +794,17 @@ contract BasicDeploy is Test {
         require(marketFactoryInstance.coreImplementation() != address(0), "Core implementation not set");
         require(marketFactoryInstance.vaultImplementation() != address(0), "Vault implementation not set");
 
-        // Create market via factory
-        vm.prank(address(timelockInstance));
+        // Grant MARKET_OWNER_ROLE to charlie (must be done by timelock since it has DEFAULT_ADMIN_ROLE)
+        vm.startPrank(address(timelockInstance));
+        marketFactoryInstance.grantRole(marketFactoryInstance.MARKET_OWNER_ROLE(), charlie);
+        vm.stopPrank();
+        
+        // Create market via factory (charlie as market owner)
+        vm.prank(charlie);
         marketFactoryInstance.createMarket(baseAsset, name, symbol);
 
-        // Get deployed addresses
-        IPROTOCOL.Market memory deployedMarket = marketFactoryInstance.getMarketInfo(baseAsset);
+        // Get deployed addresses (using charlie as market owner)
+        IPROTOCOL.Market memory deployedMarket = marketFactoryInstance.getMarketInfo(charlie, baseAsset);
         marketCoreInstance = LendefiCore(deployedMarket.core);
         marketVaultInstance = LendefiMarketVault(deployedMarket.baseVault);
 
