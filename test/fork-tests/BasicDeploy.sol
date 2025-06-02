@@ -40,6 +40,7 @@ import {LendefiMarketFactoryV2} from "../../contracts/upgrades/LendefiMarketFact
 import {LendefiCore} from "../../contracts/markets/LendefiCore.sol";
 import {LendefiCoreV2} from "../../contracts/upgrades/LendefiCoreV2.sol";
 import {LendefiMarketVault} from "../../contracts/markets/LendefiMarketVault.sol";
+import {LendefiMarketVaultV2} from "../../contracts/upgrades/LendefiMarketVaultV2.sol";
 import {LendefiPositionVault} from "../../contracts/markets/LendefiPositionVault.sol";
 import {LendefiPoRFeed} from "../../contracts/markets/LendefiPoRFeed.sol";
 
@@ -55,9 +56,9 @@ contract BasicDeploy is Test {
     bytes32 internal constant REWARDER_ROLE = keccak256("REWARDER_ROLE");
     bytes32 internal constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
     bytes32 internal constant MANAGER_ROLE = keccak256("MANAGER_ROLE");
+    bytes32 internal constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
     bytes32 internal constant PROTOCOL_ROLE = keccak256("PROTOCOL_ROLE");
     bytes32 internal constant BURNER_ROLE = keccak256("BURNER_ROLE");
-    bytes32 internal constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
     bytes32 internal constant BRIDGE_ROLE = keccak256("BRIDGE_ROLE");
     bytes32 internal constant CORE_ROLE = keccak256("CORE_ROLE");
     bytes32 internal constant DAO_ROLE = keccak256("DAO_ROLE");
@@ -709,35 +710,6 @@ contract BasicDeploy is Test {
         vm.stopPrank();
     }
 
-    /**
-     * @notice Modify deployCompleteWithOracle to use the combined protocol oracle
-     */
-    function deployCompleteWithOracle() internal {
-        vm.warp(365 days);
-        // Deploy mock tokens for testing
-        // Deploy mock tokens for testing
-        if (address(usdcInstance) == address(0)) {
-            usdcInstance = new USDC();
-        }
-        _deployTimelock();
-        _deployToken();
-        _deployEcosystem();
-        _deployTreasury();
-        _deployGovernor();
-        _deployAssetsModule();
-        _deployMarketFactory();
-
-        // Setup roles
-        vm.startPrank(guardian);
-        timelockInstance.revokeRole(PROPOSER_ROLE, ethereum);
-        timelockInstance.revokeRole(EXECUTOR_ROLE, ethereum);
-        timelockInstance.revokeRole(CANCELLER_ROLE, ethereum);
-        timelockInstance.grantRole(PROPOSER_ROLE, address(govInstance));
-        timelockInstance.grantRole(EXECUTOR_ROLE, address(govInstance));
-        timelockInstance.grantRole(CANCELLER_ROLE, address(govInstance));
-        vm.stopPrank();
-    }
-
     // ============ Markets Layer Deployment Functions ============
 
     /**
@@ -749,34 +721,32 @@ contract BasicDeploy is Test {
         require(address(timelockInstance) != address(0), "Timelock not deployed");
         // require(address(vaultFactoryInstance) != address(0), "VaultFactory not deployed");
         require(address(treasuryInstance) != address(0), "Treasury not deployed");
-        require(address(assetsInstance) != address(0), "Assets module not deployed");
+        // require(address(assetsInstance) != address(0), "Assets module not deployed");
         require(address(tokenInstance) != address(0), "Governance token not deployed");
 
         // Deploy implementations
         LendefiCore coreImpl = new LendefiCore();
         LendefiMarketVault marketVaultImpl = new LendefiMarketVault(); // For market vaults
         LendefiPositionVault positionVaultImpl = new LendefiPositionVault(); // For user position vaults
+        LendefiAssets assetsImpl = new LendefiAssets(); // Assets implementation for cloning
         LendefiPoRFeed porFeedImpl = new LendefiPoRFeed();
 
         // Deploy factory using UUPS pattern with direct proxy deployment
         bytes memory factoryData = abi.encodeCall(
             LendefiMarketFactory.initialize,
-            (
-                address(timelockInstance),
-                address(treasuryInstance),
-                address(assetsInstance),
-                address(tokenInstance),
-                address(porFeedImpl),
-                address(ecoInstance)
-            )
+            (address(timelockInstance), address(tokenInstance), gnosisSafe, address(ecoInstance))
         );
         address payable factoryProxy = payable(Upgrades.deployUUPSProxy("LendefiMarketFactory.sol", factoryData));
         marketFactoryInstance = LendefiMarketFactory(factoryProxy);
 
-        // Set implementations - marketVaultImpl for market vaults, positionVaultImpl for user vaults
+        // Set implementations - pass the implementation address, NOT the proxy
         vm.prank(address(timelockInstance));
         marketFactoryInstance.setImplementations(
-            address(coreImpl), address(marketVaultImpl), address(positionVaultImpl)
+            address(coreImpl),
+            address(marketVaultImpl),
+            address(positionVaultImpl),
+            address(assetsImpl),
+            address(porFeedImpl)
         );
     }
 
@@ -788,7 +758,7 @@ contract BasicDeploy is Test {
      */
     function _deployMarket(address baseAsset, string memory name, string memory symbol) internal {
         require(address(marketFactoryInstance) != address(0), "Market factory not deployed");
-        require(address(assetsInstance) != address(0), "Assets module not deployed");
+        // require(address(assetsInstance) != address(0), "Assets module not deployed");
 
         // Verify implementations are set
         require(marketFactoryInstance.coreImplementation() != address(0), "Core implementation not set");
@@ -798,7 +768,7 @@ contract BasicDeploy is Test {
         vm.startPrank(address(timelockInstance));
         marketFactoryInstance.grantRole(marketFactoryInstance.MARKET_OWNER_ROLE(), charlie);
         vm.stopPrank();
-        
+
         // Create market via factory (charlie as market owner)
         vm.prank(charlie);
         marketFactoryInstance.createMarket(baseAsset, name, symbol);
@@ -807,6 +777,10 @@ contract BasicDeploy is Test {
         IPROTOCOL.Market memory deployedMarket = marketFactoryInstance.getMarketInfo(charlie, baseAsset);
         marketCoreInstance = LendefiCore(deployedMarket.core);
         marketVaultInstance = LendefiMarketVault(deployedMarket.baseVault);
+
+        // Get the assets module for this specific market
+        address marketAssetsModule = marketFactoryInstance.marketAssetsModule(charlie, baseAsset);
+        assetsInstance = LendefiAssets(marketAssetsModule); // Update assetsInstance to point to the market's assets module
 
         // Grant necessary roles
         vm.startPrank(address(timelockInstance));
@@ -857,7 +831,6 @@ contract BasicDeploy is Test {
             address(timelockInstance), // admin
             address(tokenInstance), // govToken_
             address(assetsInstance), // assetsModule_
-            address(treasuryInstance), // treasury_
             address(positionVaultImpl) // positionVault
         );
         address proxy1 = Upgrades.deployTransparentProxy("LendefiCore.sol", address(timelockInstance), initData);
@@ -882,5 +855,66 @@ contract BasicDeploy is Test {
         assertTrue(
             coreInstanceV2.hasRole(DEFAULT_ADMIN_ROLE, address(timelockInstance)), "Should have DEFAULT_ADMIN_ROLE"
         );
+    }
+
+    /**
+     * @notice Upgrades the LendefiMarketVault implementation using ERC1967Proxy pattern
+     * @dev Follows the same pattern as deployLendefiCoreUpgrade but for market vault
+     */
+    function deployMarketVaultUpgrade() internal {
+        // Deploy base contracts first
+        deployComplete();
+        _deployAssetsModule();
+
+        // Deploy a mock USDC if needed
+        if (address(usdcInstance) == address(0)) {
+            usdcInstance = new USDC();
+        }
+
+        // Deploy a core implementation for testing
+        LendefiCore coreImpl = new LendefiCore();
+
+        // Correct parameters for LendefiMarketVault.initialize
+        bytes memory initData = abi.encodeWithSelector(
+            LendefiMarketVault.initialize.selector,
+            address(timelockInstance), // _timelock
+            address(coreImpl), // core
+            address(usdcInstance), // baseAsset
+            address(ecoInstance), // _ecosystem
+            address(assetsInstance), // _assetsModule
+            "Test Vault", // name
+            "TV" // symbol
+        );
+
+        address payable proxy = payable(Upgrades.deployUUPSProxy("LendefiMarketVault.sol", initData));
+        LendefiMarketVault vaultInstance = LendefiMarketVault(proxy);
+        address vaultImplementation = Upgrades.getImplementationAddress(proxy);
+        assertFalse(address(vaultInstance) == vaultImplementation);
+
+        // Get the current implementation address
+        address implAddressV1 = Upgrades.getImplementationAddress(proxy);
+
+        // Upgrade using Upgrades.upgradeProxy
+        vm.startPrank(address(timelockInstance));
+        Upgrades.upgradeProxy(proxy, "LendefiMarketVaultV2.sol", "", address(timelockInstance));
+        vm.stopPrank();
+
+        // Get the new implementation address
+        address implAddressV2 = Upgrades.getImplementationAddress(proxy);
+        LendefiMarketVaultV2 marketVaultInstanceV2 = LendefiMarketVaultV2(proxy);
+
+        // Verify the upgrade worked correctly
+        assertFalse(implAddressV2 == implAddressV1, "Implementation address didn't change");
+        assertEq(marketVaultInstanceV2.version(), 2, "Version not incremented to 2");
+
+        // Verify roles are maintained
+        assertTrue(
+            marketVaultInstanceV2.hasRole(DEFAULT_ADMIN_ROLE, address(timelockInstance)),
+            "Should have DEFAULT_ADMIN_ROLE"
+        );
+        assertTrue(marketVaultInstanceV2.hasRole(UPGRADER_ROLE, address(timelockInstance)), "Should have UPGRADER_ROLE");
+
+        // Update the marketVaultInstance reference to the upgraded version
+        marketVaultInstance = LendefiMarketVault(proxy);
     }
 }
