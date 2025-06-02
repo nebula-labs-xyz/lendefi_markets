@@ -50,11 +50,6 @@ contract LendefiMarketFactory is Initializable, AccessControlUpgradeable, UUPSUp
         bool exists;
     }
 
-    // ========== ROLES ==========
-
-    /// @notice Role identifier for addresses that can create new markets
-    bytes32 public constant MARKET_OWNER_ROLE = keccak256("MARKET_OWNER_ROLE");
-
     // ========== STATE VARIABLES ==========
 
     /// @notice Version of the factory contract
@@ -353,7 +348,7 @@ contract LendefiMarketFactory is Initializable, AccessControlUpgradeable, UUPSUp
      */
     function createMarket(address baseAsset, string memory name, string memory symbol)
         external
-        onlyRole(MARKET_OWNER_ROLE)
+        onlyRole(LendefiConstants.MARKET_OWNER_ROLE)
     {
         address marketOwner = msg.sender;
         if (baseAsset == address(0)) revert ZeroAddress();
