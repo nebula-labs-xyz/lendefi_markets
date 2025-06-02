@@ -33,7 +33,7 @@ contract MarketFactoryTest is BasicDeploy {
         marketFactoryInstance.createMarket(address(baseAsset1), "Test Market 1", "TM1");
 
         // Verify market creation
-        IPROTOCOL.Market memory createdMarket = marketFactoryInstance.getMarketInfo(address(baseAsset1));
+        IPROTOCOL.Market memory createdMarket = marketFactoryInstance.getMarketInfo(charlie, address(baseAsset1));
         assertEq(createdMarket.baseAsset, address(baseAsset1));
         assertEq(createdMarket.name, "Test Market 1");
         assertEq(createdMarket.symbol, "TM1");
@@ -44,13 +44,13 @@ contract MarketFactoryTest is BasicDeploy {
         assertTrue(createdMarket.baseVault != address(0));
 
         // Check market exists in arrays
-        address[] memory activeMarkets = marketFactoryInstance.getAllActiveMarketsAddresses();
+        IPROTOCOL.Market[] memory activeMarkets = marketFactoryInstance.getAllActiveMarkets();
         assertGe(activeMarkets.length, 1);
 
         // Should contain our new market
         bool found = false;
         for (uint256 i = 0; i < activeMarkets.length; i++) {
-            if (activeMarkets[i] == address(baseAsset1)) {
+            if (activeMarkets[i].baseAsset == address(baseAsset1)) {
                 found = true;
                 break;
             }
@@ -82,7 +82,7 @@ contract MarketFactoryTest is BasicDeploy {
     }
 
     function testGetAllActiveMarkets() public {
-        uint256 initialMarkets = marketFactoryInstance.getAllActiveMarketsAddresses().length;
+        uint256 initialMarkets = marketFactoryInstance.getAllActiveMarkets().length;
 
         // Create first market
         vm.prank(charlie);
@@ -93,15 +93,15 @@ contract MarketFactoryTest is BasicDeploy {
         marketFactoryInstance.createMarket(address(baseAsset2), "Test Market 2", "TM2");
 
         // Get all active markets
-        address[] memory activeMarkets = marketFactoryInstance.getAllActiveMarketsAddresses();
+        IPROTOCOL.Market[] memory activeMarkets = marketFactoryInstance.getAllActiveMarkets();
         assertEq(activeMarkets.length, initialMarkets + 2);
 
         // Check that our markets are included
         bool found1 = false;
         bool found2 = false;
         for (uint256 i = 0; i < activeMarkets.length; i++) {
-            if (activeMarkets[i] == address(baseAsset1)) found1 = true;
-            if (activeMarkets[i] == address(baseAsset2)) found2 = true;
+            if (activeMarkets[i].baseAsset == address(baseAsset1)) found1 = true;
+            if (activeMarkets[i].baseAsset == address(baseAsset2)) found2 = true;
         }
         assertTrue(found1);
         assertTrue(found2);
