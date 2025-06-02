@@ -46,8 +46,7 @@ contract LendefiCoreAdditionalCoverageTest is BasicDeploy {
         rwaOracleInstance.setAnsweredInRound(1);
 
         // Deploy complete system
-        deployCompleteWithOracle();
-        _deployMarket(address(usdcInstance), "Lendefi Yield Token", "LYTUSDC");
+        deployMarketsWithUSDC();
 
         // Deploy WETH and RWA token
         wethInstance = new WETH9();
