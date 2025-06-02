@@ -62,8 +62,6 @@ contract LendefiCoreV2 is
     /// @notice Address of the governance token contract
     address public govToken;
 
-    /// @notice Address of the treasury contract that receives protocol fees
-    address public treasury;
 
     /// @notice Address of the base asset for this market (e.g., USDC)
     address public baseAsset;
@@ -165,17 +163,14 @@ contract LendefiCoreV2 is
     /// @param admin Address to receive all administrative roles
     /// @param govToken_ Address of the governance token contract
     /// @param assetsModule_ Address of the assets module for collateral management
-    /// @param treasury_ Address of the treasury contract for fee collection
     /// @param positionVault Address of the cloneable vault implementation
     function initialize(
         address admin,
         address govToken_,
         address assetsModule_,
-        address treasury_,
         address positionVault
     ) external initializer {
         if (admin == address(0)) revert ZeroAddressNotAllowed();
-        if (treasury_ == address(0)) revert ZeroAddressNotAllowed();
         if (assetsModule_ == address(0)) revert ZeroAddressNotAllowed();
         if (govToken_ == address(0)) revert ZeroAddressNotAllowed();
         if (positionVault == address(0)) revert ZeroAddressNotAllowed();
@@ -189,7 +184,6 @@ contract LendefiCoreV2 is
         _grantRole(LendefiConstants.PAUSER_ROLE, admin);
         _grantRole(LendefiConstants.UPGRADER_ROLE, admin);
 
-        treasury = treasury_;
         assetsModule = IASSETS(assetsModule_);
         marketFactory = msg.sender;
         govToken = govToken_;
