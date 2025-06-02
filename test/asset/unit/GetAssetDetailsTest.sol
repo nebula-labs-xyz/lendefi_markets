@@ -26,9 +26,8 @@ contract GetAssetDetailsTest is BasicDeploy {
     uint256 constant UNI_PRICE = 8e8; // $8 per UNI
 
     function setUp() public {
-        // Use deployCompleteWithOracle() instead of deployComplete()
-        deployCompleteWithOracle();
-        _deployMarket(address(usdcInstance), "Lendefi Yield Token", "LYTUSDC");
+        // Use deployMarketsWithUSDC() instead of deployComplete()
+        deployMarketsWithUSDC();
 
         // TGE setup
         vm.prank(guardian);
