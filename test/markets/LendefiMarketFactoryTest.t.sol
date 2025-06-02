@@ -131,7 +131,7 @@ contract LendefiMarketFactoryTest is BasicDeploy {
     }
 
     function test_CreateMarket_DAI() public {
-        vm.prank(address(timelockInstance));
+        vm.prank(charlie);
         marketFactoryInstance.createMarket(address(daiToken), "Lendefi DAI Market", "lfDAI");
 
         // Verify market was created
@@ -153,8 +153,7 @@ contract LendefiMarketFactoryTest is BasicDeploy {
     }
 
     function test_CreateMarket_USDT_6Decimals() public {
-        vm.prank(address(timelockInstance));
-
+        vm.prank(charlie);
         marketFactoryInstance.createMarket(address(usdtToken), "Lendefi USDT Market", "lfUSDT");
 
         IPROTOCOL.Market memory createdMarket = marketFactoryInstance.getMarketInfo(address(usdtToken));
@@ -165,22 +164,23 @@ contract LendefiMarketFactoryTest is BasicDeploy {
     }
 
     function test_Revert_CreateMarket_Duplicate() public {
-        // Try to create another USDC market
-        vm.prank(address(timelockInstance));
+        // Try to create another USDC market (charlie already has a USDC market from BasicDeploy)
+        vm.prank(charlie);
         vm.expectRevert(LendefiMarketFactory.MarketAlreadyExists.selector);
         marketFactoryInstance.createMarket(address(usdcInstance), "Duplicate Market", "DUP");
     }
 
     function test_Revert_CreateMarket_ZeroAsset() public {
-        vm.prank(address(timelockInstance));
+        vm.prank(charlie);
         vm.expectRevert(LendefiMarketFactory.ZeroAddress.selector);
         marketFactoryInstance.createMarket(address(0), "Bad Market", "BAD");
     }
 
     function test_Revert_CreateMarket_Unauthorized() public {
+        bytes32 MARKET_OWNER_ROLE = keccak256("MARKET_OWNER_ROLE");
         vm.prank(alice);
         vm.expectRevert(
-            abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, alice, DEFAULT_ADMIN_ROLE)
+            abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, alice, MARKET_OWNER_ROLE)
         );
         marketFactoryInstance.createMarket(address(daiToken), "Unauthorized Market", "UNAUTH");
     }
@@ -203,7 +203,7 @@ contract LendefiMarketFactoryTest is BasicDeploy {
 
     function test_Revert_GetMarketInfo_ZeroAddress() public {
         vm.expectRevert(LendefiMarketFactory.ZeroAddress.selector);
-        marketFactoryInstance.getMarketInfo(address(0));
+        marketFactoryInstance.getMarketInfo(charlie, address(0));
     }
 
     function test_IsMarketActive() public {
@@ -213,20 +213,20 @@ contract LendefiMarketFactoryTest is BasicDeploy {
 
     function test_GetAllActiveMarkets() public {
         // Initially only USDC market
-        address[] memory activeMarkets = marketFactoryInstance.getAllActiveMarkets();
+        address[] memory activeMarkets = marketFactoryInstance.getAllActiveMarketsAddresses();
         assertEq(activeMarkets.length, 1);
         assertEq(activeMarkets[0], address(usdcInstance));
 
         // Create DAI market
-        vm.prank(address(timelockInstance));
+        vm.prank(charlie);
         marketFactoryInstance.createMarket(address(daiToken), "Lendefi DAI Market", "lfDAI");
 
         // Create USDT market
-        vm.prank(address(timelockInstance));
+        vm.prank(charlie);
         marketFactoryInstance.createMarket(address(usdtToken), "Lendefi USDT Market", "lfUSDT");
 
         // Should have 3 active markets
-        activeMarkets = marketFactoryInstance.getAllActiveMarkets();
+        activeMarkets = marketFactoryInstance.getAllActiveMarketsAddresses();
         assertEq(activeMarkets.length, 3);
         assertEq(activeMarkets[0], address(usdcInstance));
         assertEq(activeMarkets[1], address(daiToken));
@@ -285,7 +285,7 @@ contract LendefiMarketFactoryTest is BasicDeploy {
         vm.stopPrank();
 
         // Create DAI market
-        vm.prank(address(timelockInstance));
+        vm.prank(charlie);
         marketFactoryInstance.createMarket(address(daiToken), "Lendefi DAI Market", "lfDAI");
 
         IPROTOCOL.Market memory daiMarket = marketFactoryInstance.getMarketInfo(address(daiToken));
@@ -516,6 +516,266 @@ contract LendefiMarketFactoryTest is BasicDeploy {
             )
         );
         marketFactoryInstance.upgradeToAndCall(address(newImpl), "");
+    }
+
+    // ============ Multi-Tenant Functions Tests ============
+
+    function test_IsMarketActive_MultiTenant() public {
+        // Test with charlie's existing USDC market
+        assertTrue(marketFactoryInstance.isMarketActive(charlie, address(usdcInstance)));
+        
+        // Test with non-existent market
+        assertFalse(marketFactoryInstance.isMarketActive(charlie, address(daiToken)));
+        assertFalse(marketFactoryInstance.isMarketActive(alice, address(usdcInstance)));
+        
+        // Create DAI market for charlie
+        vm.prank(charlie);
+        marketFactoryInstance.createMarket(address(daiToken), "Lendefi DAI Market", "lfDAI");
+        
+        // Now charlie should have active DAI market
+        assertTrue(marketFactoryInstance.isMarketActive(charlie, address(daiToken)));
+        
+        // But alice still shouldn't have any markets
+        assertFalse(marketFactoryInstance.isMarketActive(alice, address(daiToken)));
+    }
+
+    function test_GetOwnerMarkets() public {
+        // Initially charlie should have 1 market (USDC from BasicDeploy)
+        IPROTOCOL.Market[] memory charlieMarkets = marketFactoryInstance.getOwnerMarkets(charlie);
+        assertEq(charlieMarkets.length, 1);
+        assertEq(charlieMarkets[0].baseAsset, address(usdcInstance));
+        assertEq(charlieMarkets[0].name, "Lendefi Yield Token");
+        
+        // Alice should have no markets
+        IPROTOCOL.Market[] memory aliceMarkets = marketFactoryInstance.getOwnerMarkets(alice);
+        assertEq(aliceMarkets.length, 0);
+        
+        // Create additional markets for charlie
+        vm.startPrank(charlie);
+        marketFactoryInstance.createMarket(address(daiToken), "Lendefi DAI Market", "lfDAI");
+        marketFactoryInstance.createMarket(address(usdtToken), "Lendefi USDT Market", "lfUSDT");
+        vm.stopPrank();
+        
+        // Charlie should now have 3 markets
+        charlieMarkets = marketFactoryInstance.getOwnerMarkets(charlie);
+        assertEq(charlieMarkets.length, 3);
+        
+        // Verify all markets belong to charlie
+        assertEq(charlieMarkets[0].baseAsset, address(usdcInstance));
+        assertEq(charlieMarkets[1].baseAsset, address(daiToken));
+        assertEq(charlieMarkets[2].baseAsset, address(usdtToken));
+        
+        // Grant MARKET_OWNER_ROLE to alice and create a market for her
+        // Use startPrank/stopPrank instead of just prank to ensure it works correctly
+        vm.startPrank(address(timelockInstance));
+        marketFactoryInstance.grantRole(marketFactoryInstance.MARKET_OWNER_ROLE(), alice);
+        vm.stopPrank();
+        
+        vm.prank(alice);
+        marketFactoryInstance.createMarket(address(daiToken), "Alice DAI Market", "aDAI");
+        
+        // Alice should now have 1 market
+        aliceMarkets = marketFactoryInstance.getOwnerMarkets(alice);
+        assertEq(aliceMarkets.length, 1);
+        assertEq(aliceMarkets[0].baseAsset, address(daiToken));
+        assertEq(aliceMarkets[0].name, "Alice DAI Market");
+        
+        // Charlie should still have 3 markets (unchanged)
+        charlieMarkets = marketFactoryInstance.getOwnerMarkets(charlie);
+        assertEq(charlieMarkets.length, 3);
+    }
+
+    function test_GetOwnerBaseAssets() public {
+        // Initially charlie should have 1 base asset (USDC)
+        address[] memory charlieAssets = marketFactoryInstance.getOwnerBaseAssets(charlie);
+        assertEq(charlieAssets.length, 1);
+        assertEq(charlieAssets[0], address(usdcInstance));
+        
+        // Alice should have no base assets
+        address[] memory aliceAssets = marketFactoryInstance.getOwnerBaseAssets(alice);
+        assertEq(aliceAssets.length, 0);
+        
+        // Create additional markets for charlie
+        vm.startPrank(charlie);
+        marketFactoryInstance.createMarket(address(daiToken), "Lendefi DAI Market", "lfDAI");
+        marketFactoryInstance.createMarket(address(usdtToken), "Lendefi USDT Market", "lfUSDT");
+        vm.stopPrank();
+        
+        // Charlie should now have 3 base assets
+        charlieAssets = marketFactoryInstance.getOwnerBaseAssets(charlie);
+        assertEq(charlieAssets.length, 3);
+        assertEq(charlieAssets[0], address(usdcInstance));
+        assertEq(charlieAssets[1], address(daiToken));
+        assertEq(charlieAssets[2], address(usdtToken));
+    }
+
+    function test_GetMarketOwnersCount() public {
+        // Initially should have 1 owner (charlie from BasicDeploy)
+        assertEq(marketFactoryInstance.getMarketOwnersCount(), 1);
+        
+        // Grant MARKET_OWNER_ROLE to alice and create a market
+        vm.startPrank(address(timelockInstance));
+        marketFactoryInstance.grantRole(marketFactoryInstance.MARKET_OWNER_ROLE(), alice);
+        vm.stopPrank();
+        
+        vm.prank(alice);
+        marketFactoryInstance.createMarket(address(daiToken), "Alice DAI Market", "aDAI");
+        
+        // Should now have 2 owners
+        assertEq(marketFactoryInstance.getMarketOwnersCount(), 2);
+        
+        // Grant MARKET_OWNER_ROLE to bob and create a market
+        vm.startPrank(address(timelockInstance));
+        marketFactoryInstance.grantRole(marketFactoryInstance.MARKET_OWNER_ROLE(), bob);
+        vm.stopPrank();
+        
+        vm.prank(bob);
+        marketFactoryInstance.createMarket(address(usdtToken), "Bob USDT Market", "bUSDT");
+        
+        // Should now have 3 owners
+        assertEq(marketFactoryInstance.getMarketOwnersCount(), 3);
+    }
+
+    function test_GetMarketOwnerByIndex() public {
+        // Initially should have charlie as the only owner
+        assertEq(marketFactoryInstance.getMarketOwnerByIndex(0), charlie);
+        
+        // Grant MARKET_OWNER_ROLE to alice and create a market
+        vm.startPrank(address(timelockInstance));
+        marketFactoryInstance.grantRole(marketFactoryInstance.MARKET_OWNER_ROLE(), alice);
+        vm.stopPrank();
+        
+        vm.prank(alice);
+        marketFactoryInstance.createMarket(address(daiToken), "Alice DAI Market", "aDAI");
+        
+        // Should now have charlie at index 0 and alice at index 1
+        assertEq(marketFactoryInstance.getMarketOwnerByIndex(0), charlie);
+        assertEq(marketFactoryInstance.getMarketOwnerByIndex(1), alice);
+    }
+
+    function test_Revert_GetMarketOwnerByIndex_OutOfBounds() public {
+        // Should revert when accessing index >= length
+        vm.expectRevert("Index out of bounds");
+        marketFactoryInstance.getMarketOwnerByIndex(1);
+        
+        vm.expectRevert("Index out of bounds");
+        marketFactoryInstance.getMarketOwnerByIndex(999);
+    }
+
+    function test_GetTotalMarketsCount() public {
+        // Initially should have 1 market (charlie's USDC from BasicDeploy)
+        assertEq(marketFactoryInstance.getTotalMarketsCount(), 1);
+        
+        // Create additional markets for charlie
+        vm.startPrank(charlie);
+        marketFactoryInstance.createMarket(address(daiToken), "Lendefi DAI Market", "lfDAI");
+        marketFactoryInstance.createMarket(address(usdtToken), "Lendefi USDT Market", "lfUSDT");
+        vm.stopPrank();
+        
+        // Should now have 3 markets
+        assertEq(marketFactoryInstance.getTotalMarketsCount(), 3);
+        
+        // Grant MARKET_OWNER_ROLE to alice and create a market
+        vm.startPrank(address(timelockInstance));
+        marketFactoryInstance.grantRole(marketFactoryInstance.MARKET_OWNER_ROLE(), alice);
+        vm.stopPrank();
+        
+        vm.prank(alice);
+        marketFactoryInstance.createMarket(address(daiToken), "Alice DAI Market", "aDAI");
+        
+        // Should now have 4 markets total
+        assertEq(marketFactoryInstance.getTotalMarketsCount(), 4);
+    }
+
+    function test_MultiTenant_MarketIsolation() public {
+        // Grant MARKET_OWNER_ROLE to alice
+        vm.startPrank(address(timelockInstance));
+        marketFactoryInstance.grantRole(marketFactoryInstance.MARKET_OWNER_ROLE(), alice);
+        vm.stopPrank();
+        
+        // Both charlie and alice create DAI markets
+        vm.prank(charlie);
+        marketFactoryInstance.createMarket(address(daiToken), "Charlie DAI Market", "cDAI");
+        
+        vm.prank(alice);
+        marketFactoryInstance.createMarket(address(daiToken), "Alice DAI Market", "aDAI");
+        
+        // Verify markets are isolated
+        IPROTOCOL.Market memory charlieDAI = marketFactoryInstance.getMarketInfo(charlie, address(daiToken));
+        IPROTOCOL.Market memory aliceDAI = marketFactoryInstance.getMarketInfo(alice, address(daiToken));
+        
+        assertEq(charlieDAI.name, "Charlie DAI Market");
+        assertEq(charlieDAI.symbol, "cDAI");
+        assertEq(aliceDAI.name, "Alice DAI Market");
+        assertEq(aliceDAI.symbol, "aDAI");
+        
+        // Verify they have different core and vault addresses
+        assertTrue(charlieDAI.core != aliceDAI.core);
+        assertTrue(charlieDAI.baseVault != aliceDAI.baseVault);
+        
+        // Verify market active status is isolated
+        assertTrue(marketFactoryInstance.isMarketActive(charlie, address(daiToken)));
+        assertTrue(marketFactoryInstance.isMarketActive(alice, address(daiToken)));
+        
+        // Verify owner markets are isolated
+        IPROTOCOL.Market[] memory charlieMarkets = marketFactoryInstance.getOwnerMarkets(charlie);
+        IPROTOCOL.Market[] memory aliceMarkets = marketFactoryInstance.getOwnerMarkets(alice);
+        
+        assertEq(charlieMarkets.length, 2); // USDC + DAI
+        assertEq(aliceMarkets.length, 1);   // DAI only
+    }
+
+    function test_GetAllActiveMarkets_MultiTenant() public {
+        // Initial state: 1 active market (charlie's USDC)
+        IPROTOCOL.Market[] memory activeMarkets = marketFactoryInstance.getAllActiveMarkets();
+        assertEq(activeMarkets.length, 1);
+        
+        // Grant MARKET_OWNER_ROLE to alice
+        vm.startPrank(address(timelockInstance));
+        marketFactoryInstance.grantRole(marketFactoryInstance.MARKET_OWNER_ROLE(), alice);
+        vm.stopPrank();
+        
+        // Create markets for multiple owners
+        vm.prank(charlie);
+        marketFactoryInstance.createMarket(address(daiToken), "Charlie DAI Market", "cDAI");
+        
+        vm.prank(alice);
+        marketFactoryInstance.createMarket(address(daiToken), "Alice DAI Market", "aDAI");
+        
+        vm.prank(alice);
+        marketFactoryInstance.createMarket(address(usdtToken), "Alice USDT Market", "aUSDT");
+        
+        // Should now have 4 active markets total
+        activeMarkets = marketFactoryInstance.getAllActiveMarkets();
+        assertEq(activeMarkets.length, 4);
+        
+        // Verify all markets are included
+        bool foundCharlieUSDC = false;
+        bool foundCharlieDAI = false;
+        bool foundAliceDAI = false;
+        bool foundAliceUSDT = false;
+        
+        for (uint256 i = 0; i < activeMarkets.length; i++) {
+            IPROTOCOL.Market memory market = activeMarkets[i];
+            if (market.baseAsset == address(usdcInstance) && 
+                keccak256(bytes(market.symbol)) == keccak256(bytes("LYTUSDC"))) {
+                foundCharlieUSDC = true;
+            } else if (market.baseAsset == address(daiToken) && 
+                       keccak256(bytes(market.symbol)) == keccak256(bytes("cDAI"))) {
+                foundCharlieDAI = true;
+            } else if (market.baseAsset == address(daiToken) && 
+                       keccak256(bytes(market.symbol)) == keccak256(bytes("aDAI"))) {
+                foundAliceDAI = true;
+            } else if (market.baseAsset == address(usdtToken) && 
+                       keccak256(bytes(market.symbol)) == keccak256(bytes("aUSDT"))) {
+                foundAliceUSDT = true;
+            }
+        }
+        
+        assertTrue(foundCharlieUSDC, "Charlie's USDC market should be found");
+        assertTrue(foundCharlieDAI, "Charlie's DAI market should be found");
+        assertTrue(foundAliceDAI, "Alice's DAI market should be found");
+        assertTrue(foundAliceUSDT, "Alice's USDT market should be found");
     }
 
     // Add missing events
