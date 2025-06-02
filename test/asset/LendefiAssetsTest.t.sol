@@ -10,6 +10,7 @@ import {TokenMock} from "../../contracts/mock/TokenMock.sol";
 import {MockUniswapV3Pool} from "../../contracts/mock/MockUniswapV3Pool.sol";
 import {MockPriceOracle} from "../../contracts/mock/MockPriceOracle.sol";
 import {LendefiPoRFeed} from "../../contracts/markets/LendefiPoRFeed.sol";
+import {LendefiConstants} from "../../contracts/markets/lib/LendefiConstants.sol";
 
 contract LendefiAssetsTest is BasicDeploy {
     // Protocol instance
@@ -30,8 +31,7 @@ contract LendefiAssetsTest is BasicDeploy {
     uint256 constant UNI_PRICE = 8e8; // $8 per UNI
 
     function setUp() public {
-        deployCompleteWithOracle();
-        _deployMarket(address(usdcInstance), "Lendefi Yield Token", "LYTUSDC");
+        deployMarketsWithUSDC();
 
         // TGE setup
         vm.prank(guardian);
@@ -640,12 +640,22 @@ contract LendefiAssetsTest is BasicDeploy {
 
     // ------ Upgrade Tests ------
     function test_UpgradeToAndCall() public {
+        // This test needs a UUPS proxy, not a cloned assets module
+        // Deploy a proper assets proxy for upgrade testing
+        LendefiPoRFeed porFeedImpl = new LendefiPoRFeed();
+        bytes memory initData = abi.encodeCall(
+            LendefiAssets.initialize, 
+            (address(timelockInstance), gnosisSafe, address(usdcInstance), address(porFeedImpl))
+        );
+        address payable assetsProxy = payable(Upgrades.deployUUPSProxy("LendefiAssets.sol", initData));
+        LendefiAssets assetsProxyInstance = LendefiAssets(assetsProxy);
+
         // Deploy a new implementation
         LendefiAssets newImplementation = new LendefiAssets();
 
         // Step 1: Schedule the upgrade first (new requirement)
         vm.prank(gnosisSafe);
-        assetsInstance.scheduleUpgrade(address(newImplementation));
+        assetsProxyInstance.scheduleUpgrade(address(newImplementation));
 
         // Step 2: Fast forward time to pass the timelock period (3 days)
         vm.warp(block.timestamp + 3 days + 1);
@@ -654,10 +664,10 @@ contract LendefiAssetsTest is BasicDeploy {
         vm.prank(gnosisSafe);
         vm.expectEmit(true, true, false, false);
         emit Upgrade(gnosisSafe, address(newImplementation));
-        assetsInstance.upgradeToAndCall(address(newImplementation), "");
+        assetsProxyInstance.upgradeToAndCall(address(newImplementation), "");
 
         // After upgrade, version should be incremented
-        assertEq(assetsInstance.version(), 2);
+        assertEq(assetsProxyInstance.version(), 2);
     }
 
     // ------ Additional Edge Cases ------
@@ -762,8 +772,8 @@ contract LendefiAssetsTest is BasicDeploy {
     }
 
     function test_UnpauseAssets() public {
-        // First pause the assets contract
-        vm.startPrank(gnosisSafe);
+        // First pause the assets contract using timelock (which should have PAUSER_ROLE)
+        vm.startPrank(address(timelockInstance));
         assetsInstance.pause();
 
         // Verify it's paused
@@ -881,7 +891,7 @@ contract LendefiAssetsTest is BasicDeploy {
         );
         assertTrue(assetsContract.hasRole(MANAGER_ROLE, timelockAddr), "Timelock should have MANAGER_ROLE");
         assertTrue(assetsContract.hasRole(UPGRADER_ROLE, gnosisSafe), "gnosisSafe should have UPGRADER_ROLE");
-        assertTrue(assetsContract.hasRole(PAUSER_ROLE, gnosisSafe), "gnosisSafe should have PAUSER_ROLE");
+        assertTrue(assetsContract.hasRole(LendefiConstants.PAUSER_ROLE, gnosisSafe), "gnosisSafe should have PAUSER_ROLE");
 
         // Check version
         assertEq(assetsContract.version(), 1, "Initial version should be 1");
