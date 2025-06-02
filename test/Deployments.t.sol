@@ -140,8 +140,8 @@ contract BasicDeployTest is BasicDeploy {
         assertTrue(address(marketCoreInstance) != address(0), "Market core should be deployed");
         assertTrue(address(marketVaultInstance) != address(0), "Market vault should be deployed");
 
-        // Check market info
-        IPROTOCOL.Market memory marketInfo = marketFactoryInstance.getMarketInfo(address(usdcInstance));
+        // Check market info - charlie is the market owner (from BasicDeploy._deployMarket)
+        IPROTOCOL.Market memory marketInfo = marketFactoryInstance.getMarketInfo(charlie, address(usdcInstance));
         assertEq(marketInfo.baseAsset, address(usdcInstance), "Base asset should be USDC");
         assertEq(marketInfo.core, address(marketCoreInstance), "Core should match");
         assertEq(marketInfo.baseVault, address(marketVaultInstance), "Vault should match");
@@ -165,8 +165,8 @@ contract BasicDeployTest is BasicDeploy {
         assertTrue(address(marketCoreInstance) != address(0), "Market core should be deployed");
         assertTrue(address(marketVaultInstance) != address(0), "Market vault should be deployed");
 
-        // Check market is active
-        assertTrue(marketFactoryInstance.isMarketActive(address(usdcInstance)), "USDC market should be active");
+        // Check market is active - charlie is the market owner
+        assertTrue(marketFactoryInstance.isMarketActive(charlie, address(usdcInstance)), "USDC market should be active");
 
         // Check core contract initialization
         assertEq(address(marketCoreInstance.baseAsset()), address(usdcInstance), "Core base asset should be USDC");
