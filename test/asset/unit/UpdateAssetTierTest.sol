@@ -15,7 +15,7 @@ contract UpdateAssetTierTest is BasicDeploy {
 
     function setUp() public {
         // Use the complete deployment function that includes Oracle module
-        deployCompleteWithOracle();
+        deployMarketsWithUSDC();
 
         // TGE setup
         vm.prank(guardian);
