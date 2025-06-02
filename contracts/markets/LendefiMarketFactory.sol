@@ -24,6 +24,7 @@ pragma solidity 0.8.23;
 import {LendefiCore} from "./LendefiCore.sol";
 import {LendefiMarketVault} from "./LendefiMarketVault.sol";
 import {IPROTOCOL} from "../interfaces/IProtocol.sol";
+import {ILendefiMarketFactory} from "../interfaces/ILendefiMarketFactory.sol";
 import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
@@ -36,7 +37,7 @@ import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transpa
 import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 
 /// @custom:oz-upgrades
-contract LendefiMarketFactory is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
+contract LendefiMarketFactory is ILendefiMarketFactory, Initializable, AccessControlUpgradeable, UUPSUpgradeable {
     using Clones for address;
     using LendefiConstants for *;
     using EnumerableSet for EnumerableSet.AddressSet;
@@ -93,7 +94,7 @@ contract LendefiMarketFactory is Initializable, AccessControlUpgradeable, UUPSUp
 
     /// @notice Nested mapping of market owner to base asset to market configuration
     /// @dev First key: market owner address, Second key: base asset address, Value: Market struct
-    mapping(address => mapping(address => IPROTOCOL.Market)) public markets;
+    mapping(address => mapping(address => IPROTOCOL.Market)) internal markets;
 
     /// @notice Mapping to track all base assets for each market owner
     /// @dev Key: market owner address, Value: EnumerableSet of base asset addresses they've created markets for
@@ -105,112 +106,13 @@ contract LendefiMarketFactory is Initializable, AccessControlUpgradeable, UUPSUp
 
     /// @notice Array of all market configurations created by this factory
     /// @dev Provides direct access to all market data across all owners
-    IPROTOCOL.Market[] public allMarkets;
+    IPROTOCOL.Market[] internal allMarkets;
 
     /// @dev Pending upgrade information
     UpgradeRequest public pendingUpgrade;
 
     // Storage gap reduced to account for new variables
     uint256[14] private __gap;
-
-    // ========== EVENTS ==========
-
-    /**
-     * @notice Emitted when a new lending market is successfully created
-     * @param marketOwner The address that owns this market instance
-     * @param baseAsset The base asset address for the new market
-     * @param core The deployed LendefiCore contract address for this market
-     * @param baseVault The deployed LendefiMarketVault contract address for this market
-     * @param name The name of the ERC20 yield token for this market
-     * @param symbol The symbol of the ERC20 yield token for this market
-     * @param porFeed The deployed Proof of Reserves feed address for this market
-     */
-    event MarketCreated(
-        address indexed marketOwner,
-        address indexed baseAsset,
-        address core,
-        address baseVault,
-        string name,
-        string symbol,
-        address porFeed
-    );
-
-    /**
-     * @notice Emitted when market information is updated
-     * @param marketOwner The address that owns the market being updated
-     * @param baseAsset The base asset address of the updated market
-     * @param marketInfo The updated market configuration data
-     */
-    event MarketUpdated(address indexed marketOwner, address indexed baseAsset, IPROTOCOL.Market marketInfo);
-
-    /**
-     * @notice Emitted when a market is removed or deactivated
-     * @param marketOwner The address that owns the market being removed
-     * @param baseAsset The base asset address of the removed market
-     */
-    event MarketRemoved(address indexed marketOwner, address indexed baseAsset);
-
-    /**
-     * @notice Emitted when implementation contracts are updated by admin
-     * @param coreImplementation The new core implementation contract address
-     * @param vaultImplementation The new vault implementation contract address
-     * @param positionVaultImplementation The new position vault implementation contract address
-     */
-    event ImplementationsSet(
-        address indexed coreImplementation,
-        address indexed vaultImplementation,
-        address indexed positionVaultImplementation
-    );
-
-    /**
-     * @notice Emitted when implementation contract is upgraded
-     * @param admin Address of the admin who performed the upgrade
-     * @param implementation Address of the new implementation
-     */
-    event Upgrade(address indexed admin, address indexed implementation);
-
-    /// @notice Emitted when an upgrade is scheduled
-    /// @param scheduler The address scheduling the upgrade
-    /// @param implementation The new implementation contract address
-    /// @param scheduledTime The timestamp when the upgrade was scheduled
-    /// @param effectiveTime The timestamp when the upgrade can be executed
-    event UpgradeScheduled(
-        address indexed scheduler, address indexed implementation, uint64 scheduledTime, uint64 effectiveTime
-    );
-
-    /// @notice Emitted when a scheduled upgrade is cancelled
-    /// @param canceller The address that cancelled the upgrade
-    /// @param implementation The implementation address that was cancelled
-    event UpgradeCancelled(address indexed canceller, address indexed implementation);
-
-    // ========== ERRORS ==========
-
-    /// @notice Thrown when attempting to create a market for an owner/asset pair that already exists
-    error MarketAlreadyExists();
-
-    /// @notice Thrown when a required address parameter is the zero address
-    error ZeroAddress();
-
-    /// @notice Thrown when trying to access a market that doesn't exist
-    error MarketNotFound();
-
-    /// @notice Thrown when clone deployment fails during market creation
-    error CloneDeploymentFailed();
-
-    /// @notice Thrown when an invalid contract address is provided
-    error InvalidContract();
-
-    /// @notice Thrown when attempting to execute an upgrade before timelock expires
-    /// @param timeRemaining The time remaining until the upgrade can be executed
-    error UpgradeTimelockActive(uint256 timeRemaining);
-
-    /// @notice Thrown when attempting to execute an upgrade that wasn't scheduled
-    error UpgradeNotScheduled();
-
-    /// @notice Thrown when implementation address doesn't match scheduled upgrade
-    /// @param scheduledImpl The address that was scheduled for upgrade
-    /// @param attemptedImpl The address that was attempted to be used
-    error ImplementationMismatch(address scheduledImpl, address attemptedImpl);
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -553,7 +455,7 @@ contract LendefiMarketFactory is Initializable, AccessControlUpgradeable, UUPSUp
         address[] memory baseAssets = ownerBaseAssets[marketOwner].values();
         uint256 len = baseAssets.length;
         IPROTOCOL.Market[] memory ownerMarkets = new IPROTOCOL.Market[](len);
-        
+
         unchecked {
             for (uint256 i; i < len; ++i) {
                 ownerMarkets[i] = markets[marketOwner][baseAssets[i]];
@@ -588,7 +490,7 @@ contract LendefiMarketFactory is Initializable, AccessControlUpgradeable, UUPSUp
         // Use allMarkets array which already has all markets
         uint256 totalMarkets = allMarkets.length;
         uint256 activeCount;
-        
+
         // First pass: count active markets
         unchecked {
             for (uint256 i; i < totalMarkets; ++i) {
@@ -597,10 +499,10 @@ contract LendefiMarketFactory is Initializable, AccessControlUpgradeable, UUPSUp
                 }
             }
         }
-        
+
         // Allocate result array
         IPROTOCOL.Market[] memory activeMarkets = new IPROTOCOL.Market[](activeCount);
-        
+
         // Second pass: populate active markets
         if (activeCount > 0) {
             uint256 index;
@@ -613,7 +515,7 @@ contract LendefiMarketFactory is Initializable, AccessControlUpgradeable, UUPSUp
                 }
             }
         }
-        
+
         return activeMarkets;
     }
 
@@ -654,8 +556,6 @@ contract LendefiMarketFactory is Initializable, AccessControlUpgradeable, UUPSUp
     function getTotalMarketsCount() external view returns (uint256) {
         return allMarkets.length;
     }
-
-
 
     // ========== UUPS UPGRADE AUTHORIZATION ==========
 
