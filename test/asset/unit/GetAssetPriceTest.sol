@@ -7,6 +7,7 @@ import {IASSETS} from "../../../contracts/interfaces/IASSETS.sol";
 import {WETHPriceConsumerV3} from "../../../contracts/mock/WETHOracle.sol";
 import {StablePriceConsumerV3} from "../../../contracts/mock/StableOracle.sol";
 import {MockWBTC} from "../../../contracts/mock/MockWBTC.sol";
+import {MockUniswapV3Pool} from "../../../contracts/mock/MockUniswapV3Pool.sol";
 
 contract GetAssetPriceTest is BasicDeploy {
     // Token instances
@@ -184,17 +185,17 @@ contract GetAssetPriceTest is BasicDeploy {
         // Test the getPoRFeed function (line 772-773)
         address wethPoRFeed = assetsInstance.getPoRFeed(address(wethInstance));
         assertTrue(wethPoRFeed != address(0), "PoR feed should be deployed for WETH");
-        
+
         address usdcPoRFeed = assetsInstance.getPoRFeed(address(usdcInstance));
         assertTrue(usdcPoRFeed != address(0), "PoR feed should be deployed for USDC");
-        
+
         address wbtcPoRFeed = assetsInstance.getPoRFeed(address(wbtcToken));
         assertTrue(wbtcPoRFeed != address(0), "PoR feed should be deployed for WBTC");
     }
 
     function test_GetPoRFeed_UnlistedAsset() public {
         address randomAddress = address(0x123);
-        
+
         vm.expectRevert(abi.encodeWithSelector(IASSETS.AssetNotListed.selector, randomAddress));
         assetsInstance.getPoRFeed(randomAddress);
     }
@@ -203,42 +204,93 @@ contract GetAssetPriceTest is BasicDeploy {
         // Test circuit breaker functionality (line 814-816)
         // Instead of trying to trigger the circuit breaker, we'll test the normal path
         // and document that the circuit breaker revert path exists
-        
+
         // First verify normal operation
         uint256 price = assetsInstance.getAssetPrice(address(wethInstance));
         assertEq(price, 2500e6, "Normal price should work");
-        
+
         // The circuit breaker revert path at line 814-816 is:
         // if (circuitBroken[asset]) { revert CircuitBreakerActive(asset); }
         // This is tested in other circuit breaker specific tests
-        
+
         assertTrue(true, "Circuit breaker path exists in getAssetPrice");
     }
 
     function test_GetAssetPrice_ChainlinkOnlyPath() public {
         // Test the Chainlink-only path which is line 824-825
         // if (chainlinkActive == 1 && uniswapActive == 0) { return _getChainlinkPrice(asset); }
-        
+
         // WETH is already configured as Chainlink-only in setup
         uint256 price = assetsInstance.getAssetPrice(address(wethInstance));
         assertEq(price, 2500e6, "Chainlink-only path should return correct price");
-        
+
         // This covers the line 824-825 path
         assertTrue(true, "Chainlink-only oracle path covered");
+    }
+
+    function test_GetAssetPrice_UniswapOnlyPath() public {
+        // Create a new mock token for this test
+
+        // Deploy and configure Uniswap pool mock
+        MockUniswapV3Pool mockUniswapPool = new MockUniswapV3Pool(address(usdcInstance), address(wbtcToken), 3000);
+
+        // Set up tick cumulatives for TWAP - price increasing over time
+        int56[] memory tickCumulatives = new int56[](2);
+        tickCumulatives[0] = 0; // At time T-30min
+        tickCumulatives[1] = 1800 * 600; // At current time, tick of 600 for 1800 seconds
+        mockUniswapPool.setTickCumulatives(tickCumulatives);
+
+        // Set up seconds per liquidity
+        uint160[] memory secondsPerLiquidityCumulatives = new uint160[](2);
+        secondsPerLiquidityCumulatives[0] = 1000;
+        secondsPerLiquidityCumulatives[1] = 2000;
+        mockUniswapPool.setSecondsPerLiquidity(secondsPerLiquidityCumulatives);
+
+        // Make sure observations succeed
+        mockUniswapPool.setObserveSuccess(true);
+
+        vm.startPrank(address(timelockInstance));
+
+        // Configure asset with ONLY Uniswap oracle active (no Chainlink)
+        assetsInstance.updateAssetConfig(
+            address(wbtcToken),
+            IASSETS.Asset({
+                active: 1,
+                decimals: 8,
+                borrowThreshold: 800,
+                liquidationThreshold: 850,
+                maxSupplyThreshold: 1_000 * 1e8,
+                isolationDebtCap: 0,
+                assetMinimumOracles: 1,
+                porFeed: assetsInstance.getAssetInfo(address(wbtcToken)).porFeed,
+                primaryOracleType: IASSETS.OracleType.UNISWAP_V3_TWAP,
+                tier: IASSETS.CollateralTier.CROSS_A,
+                chainlinkConfig: IASSETS.ChainlinkOracleConfig({oracleUSD: address(wbtcOracleInstance), active: 0}),
+                poolConfig: IASSETS.UniswapPoolConfig({
+                    pool: address(mockUniswapPool), // Mock Uniswap pool
+                    twapPeriod: 1800, // 30 minutes
+                    active: 1 // Uniswap active
+                })
+            })
+        );
+
+        vm.stopPrank();
+
+        assetsInstance.getAssetPrice(address(wbtcToken));
     }
 
     function test_GetAssetPrice_OraclePathDocumentation() public {
         // Document the remaining paths that exist in getAssetPrice:
         // Line 827-828: if (uniswapActive == 1 && chainlinkActive == 0) { return _getUniswapTWAPPrice(asset); }
         // Line 832-836: Dual-oracle case with median calculation
-        
+
         // These paths require Uniswap oracle setup which needs external contracts
         // However, the code coverage tool will see these lines as part of the function
-        
+
         // Test that the main function works (covers entry and basic logic)
         uint256 price = assetsInstance.getAssetPrice(address(wethInstance));
         assertTrue(price > 0, "Price function should work");
-        
+
         // The uncovered lines 827-828 and 832-836 are complex oracle paths
         // that would require mock Uniswap pools to test properly
         assertTrue(true, "Oracle path documentation complete");
