@@ -30,6 +30,7 @@ import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/U
 import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {IPoRFeed} from "../interfaces/IPoRFeed.sol";
+import {IASSETS} from "../interfaces/IASSETS.sol";
 import {LendefiConstants} from "./lib/LendefiConstants.sol";
 import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 
@@ -69,13 +70,13 @@ contract LendefiMarketFactory is Initializable, AccessControlUpgradeable, UUPSUp
     /// @dev Used by core contracts to create individual user position vaults
     address public positionVaultImplementation;
 
-    /// @notice Address of the protocol treasury that receives fees and rewards
-    /// @dev Treasury address is passed to all created markets for fee collection
-    address public treasury;
+    /// @notice Implementation contract address for LendefiAssets instances
+    /// @dev Used as template for cloning new assets module contracts for each market
+    address public assetsModuleImplementation;
 
-    /// @notice Address of the assets module contract for asset management and validation
-    /// @dev Contains asset whitelisting, pricing, and configuration logic
-    address public assetsModule;
+    /// @notice Address of the Proof of Reserves feed implementation
+    /// @dev Template for creating PoR feeds for each market to track reserves
+    address public porFeedImplementation;
 
     /// @notice Address of the protocol governance token
     /// @dev Used for liquidator threshold requirements and rewards distribution
@@ -85,9 +86,9 @@ contract LendefiMarketFactory is Initializable, AccessControlUpgradeable, UUPSUp
     /// @dev Has admin privileges across all created markets for governance operations
     address public timelock;
 
-    /// @notice Address of the Proof of Reserves feed implementation
-    /// @dev Template for creating PoR feeds for each market to track reserves
-    address public porFeed;
+    /// @notice Address of the multisig wallet for administrative operations
+    /// @dev Has admin privileges across all created markets for governance operations
+    address public multisig;
 
     /// @notice Address of the ecosystem contract for reward distribution
     /// @dev Handles governance token rewards for liquidity providers
@@ -96,6 +97,10 @@ contract LendefiMarketFactory is Initializable, AccessControlUpgradeable, UUPSUp
     /// @notice Nested mapping of market owner to base asset to market configuration
     /// @dev First key: market owner address, Second key: base asset address, Value: Market struct
     mapping(address => mapping(address => IPROTOCOL.Market)) public markets;
+
+    /// @notice Nested mapping of market owner to base asset to assets module address
+    /// @dev First key: market owner address, Second key: base asset address, Value: assets module address
+    mapping(address => mapping(address => address)) public marketAssetsModule;
 
     /// @notice Mapping to track all base assets for each market owner
     /// @dev Key: market owner address, Value: array of base asset addresses they've created markets for
@@ -226,10 +231,8 @@ contract LendefiMarketFactory is Initializable, AccessControlUpgradeable, UUPSUp
      * @dev Sets up the factory with all required contract addresses and grants admin role to timelock.
      *      This function can only be called once due to the initializer modifier.
      * @param _timelock Address of the timelock contract that will have admin privileges
-     * @param _treasury Address of the protocol treasury for fee collection
-     * @param _assetsModule Address of the assets module for asset management
      * @param _govToken Address of the protocol governance token
-     * @param _porFeed Address of the Proof of Reserves feed implementation
+     * @param _multisig Address of the Proof of Reserves feed implementation
      * @param _ecosystem Address of the ecosystem contract for rewards
      *
      * @custom:requirements
@@ -245,18 +248,11 @@ contract LendefiMarketFactory is Initializable, AccessControlUpgradeable, UUPSUp
      * @custom:error-cases
      *   - ZeroAddress: When any required address parameter is zero
      */
-    function initialize(
-        address _timelock,
-        address _treasury,
-        address _assetsModule,
-        address _govToken,
-        address _porFeed,
-        address _ecosystem
-    ) external initializer {
-        if (
-            _timelock == address(0) || _treasury == address(0) || _assetsModule == address(0) || _govToken == address(0)
-                || _porFeed == address(0) || _ecosystem == address(0)
-        ) {
+    function initialize(address _timelock, address _govToken, address _multisig, address _ecosystem)
+        external
+        initializer
+    {
+        if (_timelock == address(0) || _govToken == address(0) || _multisig == address(0) || _ecosystem == address(0)) {
             revert ZeroAddress();
         }
 
@@ -266,11 +262,9 @@ contract LendefiMarketFactory is Initializable, AccessControlUpgradeable, UUPSUp
         _grantRole(DEFAULT_ADMIN_ROLE, _timelock);
         _grantRole(LendefiConstants.UPGRADER_ROLE, _timelock);
 
-        treasury = _treasury;
-        assetsModule = _assetsModule;
         govToken = _govToken;
         timelock = _timelock;
-        porFeed = _porFeed;
+        multisig = _multisig;
         ecosystem = _ecosystem;
         version = 1;
     }
@@ -302,16 +296,21 @@ contract LendefiMarketFactory is Initializable, AccessControlUpgradeable, UUPSUp
     function setImplementations(
         address _coreImplementation,
         address _vaultImplementation,
-        address _positionVaultImplementation
+        address _positionVaultImplementation,
+        address _assetsModuleImplementation,
+        address _PoRFeed
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (
             _coreImplementation == address(0) || _vaultImplementation == address(0)
-                || _positionVaultImplementation == address(0)
+                || _positionVaultImplementation == address(0) || _assetsModuleImplementation == address(0)
+                || _PoRFeed == address(0)
         ) revert ZeroAddress();
 
         coreImplementation = _coreImplementation;
         vaultImplementation = _vaultImplementation;
         positionVaultImplementation = _positionVaultImplementation;
+        assetsModuleImplementation = _assetsModuleImplementation;
+        porFeedImplementation = _PoRFeed;
 
         emit ImplementationsSet(_coreImplementation, _vaultImplementation, _positionVaultImplementation);
     }
@@ -363,13 +362,13 @@ contract LendefiMarketFactory is Initializable, AccessControlUpgradeable, UUPSUp
         if (markets[marketOwner][baseAsset].core != address(0)) revert MarketAlreadyExists();
 
         // Deploy core and vault contracts
-        (address coreProxy, address vaultProxy) = _deployContracts(baseAsset, name, symbol);
+        (address coreProxy, address vaultProxy, address assetsModule) = _deployContracts(baseAsset, name, symbol);
 
         // Deploy and initialize PoR feed
         address porFeedClone = _deployPoRFeed(baseAsset);
 
         // Create and store market configuration
-        _storeMarket(marketOwner, baseAsset, coreProxy, vaultProxy, porFeedClone, name, symbol);
+        _storeMarket(marketOwner, baseAsset, coreProxy, vaultProxy, porFeedClone, assetsModule, name, symbol);
 
         // Initialize the core contract with market information
         LendefiCore(payable(coreProxy)).initializeMarket(markets[marketOwner][baseAsset]);
@@ -382,8 +381,17 @@ contract LendefiMarketFactory is Initializable, AccessControlUpgradeable, UUPSUp
      */
     function _deployContracts(address baseAsset, string memory name, string memory symbol)
         internal
-        returns (address coreProxy, address vaultProxy)
+        returns (address coreProxy, address vaultProxy, address assetsModule)
     {
+        // Clone assets module for this market
+        assetsModule = assetsModuleImplementation.clone();
+        if (assetsModule == address(0) || assetsModule.code.length == 0) revert CloneDeploymentFailed();
+
+        // Initialize the cloned assets module
+        // Note: Using timelock for both admin and multisig roles
+        // Using the porFeed implementation as template (assets module will clone it for each asset)
+        IASSETS(assetsModule).initialize(timelock, multisig, baseAsset, porFeedImplementation);
+
         // Create core contract using minimal proxy pattern
         address core = coreImplementation.clone();
         if (core == address(0) || core.code.length == 0) revert CloneDeploymentFailed();
@@ -409,7 +417,7 @@ contract LendefiMarketFactory is Initializable, AccessControlUpgradeable, UUPSUp
      * @dev Internal function to deploy and initialize PoR feed
      */
     function _deployPoRFeed(address baseAsset) internal returns (address porFeedClone) {
-        porFeedClone = porFeed.clone();
+        porFeedClone = porFeedImplementation.clone();
         if (porFeedClone == address(0) || porFeedClone.code.length == 0) revert CloneDeploymentFailed();
 
         IPoRFeed(porFeedClone).initialize(baseAsset, timelock, timelock);
@@ -424,6 +432,7 @@ contract LendefiMarketFactory is Initializable, AccessControlUpgradeable, UUPSUp
         address coreProxy,
         address vaultProxy,
         address porFeedClone,
+        address assetsModule,
         string memory name,
         string memory symbol
     ) internal {
@@ -442,6 +451,9 @@ contract LendefiMarketFactory is Initializable, AccessControlUpgradeable, UUPSUp
 
         // Store market information in nested mapping
         markets[marketOwner][baseAsset] = marketInfo;
+
+        // Store the assets module for this market
+        marketAssetsModule[marketOwner][baseAsset] = assetsModule;
 
         // Track base assets for this owner
         ownerBaseAssets[marketOwner].push(baseAsset);
