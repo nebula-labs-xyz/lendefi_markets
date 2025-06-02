@@ -27,8 +27,8 @@ contract GetListedAssetsTest is BasicDeploy {
     LINK internal linkInstance;
 
     function setUp() public {
-        // Use deployCompleteWithOracle() instead of deployComplete()
-        deployCompleteWithOracle();
+        // Use deployMarketsWithUSDC() instead of deployComplete()
+        deployMarketsWithUSDC();
 
         // TGE setup
         vm.prank(guardian);
