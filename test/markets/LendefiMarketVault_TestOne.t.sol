@@ -42,10 +42,9 @@ contract LendefiMarketVault_TestOne is BasicDeploy {
         wethOracleInstance.setAnsweredInRound(1);
 
         // Deploy complete system
-        deployCompleteWithOracle();
+        deployMarketsWithUSDC();
         vm.prank(guardian);
         tokenInstance.initializeTGE(address(ecoInstance), address(treasuryInstance));
-        _deployMarket(address(usdcInstance), "Lendefi Yield Token", "LYTUSDC");
 
         // Configure assets
         vm.startPrank(address(timelockInstance));
