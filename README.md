@@ -281,11 +281,12 @@ factory.createMarket(USDT, "Lendefi mUSDT", "mUSDT");
 
 ```solidity
 // Get market information
-LendefiCore.Market memory market = factory.getMarketInfo(USD1);
+IPROTOCOL.Market memory market = factory.getMarketInfo(USD1);
 
 // Interact with specific market
 LendefiCore core = LendefiCore(market.core);
 LendefiMarketVault vault = LendefiMarketVault(market.baseVault);
+LendefiAssets assets = LendefiAssets(market.assetsModule);
 
 // Supply liquidity to USD1 market with slippage protection
 core.depositLiquidity(amount, expectedShares, maxSlippageBps);
@@ -307,10 +308,10 @@ Track deployed markets and their configurations:
 
 ```solidity
 // Get all active markets
-address[] memory activeMarkets = factory.getAllActiveMarkets();
+IPROTOCOL.Market[] memory activeMarkets = factory.getAllActiveMarkets();
 
 // Check market details
-LendefiCore.Market memory usdcMarket = factory.getMarketInfo(USDC);
+IPROTOCOL.Market memory usdcMarket = factory.getMarketInfo(USDC);
 ```
 
 ## Benefits of Composable Architecture
