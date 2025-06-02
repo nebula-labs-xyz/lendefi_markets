@@ -19,8 +19,8 @@ contract GetAssetPriceTest is BasicDeploy {
     StablePriceConsumerV3 internal stableOracleInstance;
 
     function setUp() public {
-        // Use deployCompleteWithOracle() instead of deployComplete()
-        deployCompleteWithOracle();
+        // Use deployMarketsWithUSDC() instead of deployComplete()
+        deployMarketsWithUSDC();
 
         // TGE setup
         vm.prank(guardian);
