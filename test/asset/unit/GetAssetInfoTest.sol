@@ -15,8 +15,8 @@ contract GetAssetInfoTest is BasicDeploy {
     WETHPriceConsumerV3 internal uniOracleInstance;
 
     function setUp() public {
-        // Use deployCompleteWithOracle() instead of deployComplete()
-        deployCompleteWithOracle();
+        // Use deployMarketsWithUSDC() instead of deployComplete()
+        deployMarketsWithUSDC();
 
         // TGE setup
         vm.prank(guardian);
