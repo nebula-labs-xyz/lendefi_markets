@@ -74,27 +74,31 @@ contract BasicDeployTest is BasicDeploy {
         deployTeamManagerUpgrade();
     }
 
-    function test_012_deployCompleteWithOracle() public {
-        deployCompleteWithOracle();
+    function test_012_deployMarketsWithUSDC() public {
+        deployMarketsWithUSDC();
 
         // Verify all components are deployed
         assertTrue(address(tokenInstance) != address(0), "Token should be deployed");
         assertTrue(address(ecoInstance) != address(0), "Ecosystem should be deployed");
         assertTrue(address(treasuryInstance) != address(0), "Treasury should be deployed");
-        assertTrue(address(govInstance) != address(0), "Governor should be deployed");
+        assertTrue(address(marketFactoryInstance) != address(0), "Market Factory should be deployed");
         assertTrue(address(timelockInstance) != address(0), "Timelock should be deployed");
-        assertTrue(address(assetsInstance) != address(0), "Oracle should be deployed");
+        assertTrue(address(assetsInstance) != address(0), "Assets should be deployed");
         assertTrue(address(usdcInstance) != address(0), "USDC mock should be deployed");
+        assertTrue(address(marketCoreInstance) != address(0), "Market Core should be deployed");
+        assertTrue(address(marketVaultInstance) != address(0), "Market Vault should be deployed");
 
         // Log addresses for reference
-        console2.log("===== Complete System Deployment =====");
+        console2.log("===== Complete Markets System Deployment =====");
         console2.log("GovToken:     ", address(tokenInstance));
         console2.log("Ecosystem:    ", address(ecoInstance));
         console2.log("Treasury:     ", address(treasuryInstance));
-        console2.log("Governor:     ", address(govInstance));
+        console2.log("MarketFactory:", address(marketFactoryInstance));
         console2.log("Timelock:     ", address(timelockInstance));
         console2.log("Assets:       ", address(assetsInstance));
         console2.log("USDC:         ", address(usdcInstance));
+        console2.log("MarketCore:   ", address(marketCoreInstance));
+        console2.log("MarketVault:  ", address(marketVaultInstance));
     }
 
     function test_013_deployAssetsModuleUpgrade() public {
@@ -107,13 +111,12 @@ contract BasicDeployTest is BasicDeploy {
     // ============ Markets Layer Tests ============
 
     function test_014_deployMarketFactory() public {
-        deployCompleteWithOracle();
+        deployMarketsWithUSDC();
         _deployMarketFactory();
 
         // Verify market factory deployment
         assertTrue(address(marketFactoryInstance) != address(0), "Market factory should be deployed");
-        assertEq(marketFactoryInstance.treasury(), address(treasuryInstance), "Treasury should be set");
-        assertEq(marketFactoryInstance.assetsModule(), address(assetsInstance), "Assets module should be set");
+        assertTrue(marketFactoryInstance.assetsModuleImplementation() != address(0), "Assets module implementation should be set");
         assertEq(marketFactoryInstance.govToken(), address(tokenInstance), "Gov token should be set");
         assertEq(marketFactoryInstance.timelock(), address(timelockInstance), "Timelock should be set");
 
@@ -127,7 +130,7 @@ contract BasicDeployTest is BasicDeploy {
     }
 
     function test_015_deployMarket() public {
-        deployCompleteWithOracle();
+        deployMarketsWithUSDC();
         _deployMarketFactory();
 
         // Deploy a USDC market
@@ -182,7 +185,7 @@ contract BasicDeployTest is BasicDeploy {
     }
 
     function test_017_deployMarketFactoryUpgrade() public {
-        deployCompleteWithOracle();
+        deployMarketsWithUSDC();
         deployMarketFactoryUpgrade();
     }
 
