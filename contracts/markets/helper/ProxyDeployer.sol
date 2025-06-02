@@ -21,7 +21,6 @@ contract ProxyDeployer {
         address baseAsset,
         address timelockInstance,
         address tokenInstance,
-        address treasuryInstance,
         address ecosystemInstance,
         address assetsInstance,
         string memory name,
@@ -29,7 +28,7 @@ contract ProxyDeployer {
     ) public returns (address vaultInstance) {
         address positionVaultImpl = address(new LendefiPositionVault());
         address marketCore =
-            deployLendefiCoreProxy(timelockInstance, tokenInstance, assetsInstance, treasuryInstance, positionVaultImpl);
+            deployLendefiCoreProxy(timelockInstance, tokenInstance, assetsInstance, positionVaultImpl);
         // Deploy base contracts first
         bytes memory initData = abi.encodeWithSelector(
             LendefiMarketVault.initialize.selector,
@@ -56,7 +55,6 @@ contract ProxyDeployer {
         address timelockInstance,
         address tokenInstance,
         address assetsInstance,
-        address treasuryInstance,
         address positionVaultImpl
     ) internal returns (address coreInstance) {
         // // Get initialization data from current core
@@ -65,7 +63,6 @@ contract ProxyDeployer {
             address(timelockInstance), // admin
             address(tokenInstance), // govToken_
             address(assetsInstance), // assetsModule_
-            address(treasuryInstance), // treasury_
             address(positionVaultImpl) // positionVault
         );
         address proxy = Upgrades.deployTransparentProxy("LendefiCore.sol", address(timelockInstance), initData);
