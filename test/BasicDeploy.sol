@@ -778,8 +778,8 @@ contract BasicDeploy is Test {
         marketCoreInstance = LendefiCore(deployedMarket.core);
         marketVaultInstance = LendefiMarketVault(deployedMarket.baseVault);
 
-        // Get the assets module for this specific market
-        address marketAssetsModule = marketFactoryInstance.marketAssetsModule(charlie, baseAsset);
+        // Get the assets module for this specific market from the market struct
+        address marketAssetsModule = deployedMarket.assetsModule;
         assetsInstance = LendefiAssets(marketAssetsModule); // Update assetsInstance to point to the market's assets module
 
         // Grant necessary roles
