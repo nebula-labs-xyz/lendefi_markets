@@ -26,6 +26,9 @@ library LendefiConstants {
     /// @notice Role identifier for users authorized to access borrow/repay functions in the LendefiMarketVault
     bytes32 internal constant PROTOCOL_ROLE = keccak256("PROTOCOL_ROLE");
 
+    /// @notice Role identifier for addresses that can create new markets
+    bytes32 internal constant MARKET_OWNER_ROLE = keccak256("MARKET_OWNER_ROLE");
+
     /// @notice Duration of the timelock for upgrade operations (3 days)
     uint256 internal constant UPGRADE_TIMELOCK_DURATION = 3 days;
 
