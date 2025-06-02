@@ -26,8 +26,7 @@ contract UpdateAssetConfigTest is BasicDeploy {
 
     function setUp() public {
         // Use the updated deployment function that includes Oracle setup
-        deployCompleteWithOracle();
-        _deployMarket(address(usdcInstance), "Lendefi Yield Token", "LYTUSDC");
+        deployMarketsWithUSDC();
 
         // TGE setup
         vm.prank(guardian);
