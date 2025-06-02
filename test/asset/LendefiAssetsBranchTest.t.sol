@@ -19,13 +19,25 @@ contract LendefiAssetsBranchTest is BasicDeploy {
 
     // Test users
     address unauthorizedUser = address(0xBEEF);
+    
+    // For upgrade tests, we need a proper UUPS proxy
+    LendefiAssets assetsProxyForUpgrades;
 
     function setUp() public {
         // Deploy base contracts
         usdcInstance = new USDC();
         wethInstance = new WETH9();
-        deployCompleteWithOracle();
-        _deployMarket(address(usdcInstance), "Lendefi Yield Token", "LYTUSDC");
+        deployMarketsWithUSDC();
+        
+        // Deploy a separate assets proxy for upgrade testing
+        // The market-based deployment gives us cloned assets modules, but upgrade tests need UUPS proxies
+        LendefiPoRFeed porFeedImpl = new LendefiPoRFeed();
+        bytes memory initData = abi.encodeCall(
+            LendefiAssets.initialize, 
+            (address(timelockInstance), gnosisSafe, address(usdcInstance), address(porFeedImpl))
+        );
+        address payable assetsProxy = payable(Upgrades.deployUUPSProxy("LendefiAssets.sol", initData));
+        assetsProxyForUpgrades = LendefiAssets(assetsProxy);
 
         // Deploy mock contracts
         mockUniswapPool = new MockUniswapV3Pool(address(wethInstance), address(usdcInstance), 3000);
@@ -75,7 +87,7 @@ contract LendefiAssetsBranchTest is BasicDeploy {
                 IAccessControl.AccessControlUnauthorizedAccount.selector, unauthorizedUser, UPGRADER_ROLE
             )
         );
-        assetsInstance.scheduleUpgrade(address(newImplementation));
+        assetsProxyForUpgrades.scheduleUpgrade(address(newImplementation));
     }
 
     function test_1_2_CancelUpgradeWithoutRole() public {
@@ -83,7 +95,7 @@ contract LendefiAssetsBranchTest is BasicDeploy {
         LendefiAssets newImplementation = new LendefiAssets();
 
         vm.prank(gnosisSafe);
-        assetsInstance.scheduleUpgrade(address(newImplementation));
+        assetsProxyForUpgrades.scheduleUpgrade(address(newImplementation));
 
         // Attempt to cancel without proper role
         vm.prank(unauthorizedUser);
@@ -92,7 +104,7 @@ contract LendefiAssetsBranchTest is BasicDeploy {
                 IAccessControl.AccessControlUnauthorizedAccount.selector, unauthorizedUser, UPGRADER_ROLE
             )
         );
-        assetsInstance.cancelUpgrade();
+        assetsProxyForUpgrades.cancelUpgrade();
     }
 
     function test_1_3_UpgradeWithImplementationMismatch() public {
@@ -100,7 +112,7 @@ contract LendefiAssetsBranchTest is BasicDeploy {
         LendefiAssets scheduledImpl = new LendefiAssets();
 
         vm.prank(gnosisSafe);
-        assetsInstance.scheduleUpgrade(address(scheduledImpl));
+        assetsProxyForUpgrades.scheduleUpgrade(address(scheduledImpl));
 
         // Try to upgrade with a different implementation
         LendefiAssets differentImpl = new LendefiAssets();
@@ -113,7 +125,7 @@ contract LendefiAssetsBranchTest is BasicDeploy {
                 IASSETS.ImplementationMismatch.selector, address(scheduledImpl), address(differentImpl)
             )
         );
-        assetsInstance.upgradeToAndCall(address(differentImpl), "");
+        assetsProxyForUpgrades.upgradeToAndCall(address(differentImpl), "");
     }
 
     // ======== 2. Oracle Management Tests ========
