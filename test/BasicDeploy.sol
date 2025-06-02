@@ -858,7 +858,6 @@ contract BasicDeploy is Test {
             address(timelockInstance), // admin
             address(tokenInstance), // govToken_
             address(assetsInstance), // assetsModule_
-            address(treasuryInstance), // treasury_
             address(positionVaultImpl) // positionVault
         );
         address proxy1 = Upgrades.deployTransparentProxy("LendefiCore.sol", address(timelockInstance), initData);
