@@ -33,11 +33,13 @@ import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IER
 import {IPoRFeed} from "../interfaces/IPoRFeed.sol";
 import {LendefiConstants} from "../markets/lib/LendefiConstants.sol";
 import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
+import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 
 /// @custom:oz-upgrades-from contracts/markets/LendefiMarketFactory.sol:LendefiMarketFactory
 contract LendefiMarketFactoryV2 is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
     using Clones for address;
     using LendefiConstants for *;
+    using EnumerableSet for EnumerableSet.AddressSet;
 
     /**
      * @notice Information about a scheduled contract upgrade
@@ -100,8 +102,8 @@ contract LendefiMarketFactoryV2 is Initializable, AccessControlUpgradeable, UUPS
 
 
     /// @notice Mapping to track all base assets for each market owner
-    /// @dev Key: market owner address, Value: array of base asset addresses they've created markets for
-    mapping(address => address[]) public ownerBaseAssets;
+    /// @dev Key: market owner address, Value: EnumerableSet of base asset addresses they've created markets for
+    mapping(address => EnumerableSet.AddressSet) internal ownerBaseAssets;
 
     /// @notice Array of all market owners who have created markets
     /// @dev Used for enumeration and iteration over all market owners
@@ -451,10 +453,11 @@ contract LendefiMarketFactoryV2 is Initializable, AccessControlUpgradeable, UUPS
         markets[marketOwner][baseAsset] = marketInfo;
 
         // Track base assets for this owner
-        ownerBaseAssets[marketOwner].push(baseAsset);
+        bool isFirstAsset = ownerBaseAssets[marketOwner].length() == 0;
+        ownerBaseAssets[marketOwner].add(baseAsset);
 
         // Track unique market owners (only add if this is their first market)
-        if (ownerBaseAssets[marketOwner].length == 1) {
+        if (isFirstAsset) {
             allMarketOwners.push(marketOwner);
         }
 
@@ -553,11 +556,14 @@ contract LendefiMarketFactoryV2 is Initializable, AccessControlUpgradeable, UUPS
      * @custom:access-control Available to any caller (view function)
      */
     function getOwnerMarkets(address marketOwner) external view returns (IPROTOCOL.Market[] memory) {
-        address[] memory baseAssets = ownerBaseAssets[marketOwner];
-        IPROTOCOL.Market[] memory ownerMarkets = new IPROTOCOL.Market[](baseAssets.length);
-
-        for (uint256 i = 0; i < baseAssets.length; i++) {
-            ownerMarkets[i] = markets[marketOwner][baseAssets[i]];
+        address[] memory baseAssets = ownerBaseAssets[marketOwner].values();
+        uint256 len = baseAssets.length;
+        IPROTOCOL.Market[] memory ownerMarkets = new IPROTOCOL.Market[](len);
+        
+        unchecked {
+            for (uint256 i; i < len; ++i) {
+                ownerMarkets[i] = markets[marketOwner][baseAssets[i]];
+            }
         }
 
         return ownerMarkets;
@@ -572,7 +578,7 @@ contract LendefiMarketFactoryV2 is Initializable, AccessControlUpgradeable, UUPS
      * @custom:access-control Available to any caller (view function)
      */
     function getOwnerBaseAssets(address marketOwner) external view returns (address[] memory) {
-        return ownerBaseAssets[marketOwner];
+        return ownerBaseAssets[marketOwner].values();
     }
 
     /**
@@ -585,36 +591,35 @@ contract LendefiMarketFactoryV2 is Initializable, AccessControlUpgradeable, UUPS
      * @custom:access-control Available to any caller (view function)
      */
     function getAllActiveMarkets() external view returns (IPROTOCOL.Market[] memory) {
-        uint256 totalCount = 0;
-
-        // First, count active markets
-        for (uint256 i = 0; i < allMarketOwners.length; i++) {
-            address owner = allMarketOwners[i];
-            address[] memory baseAssets = ownerBaseAssets[owner];
-
-            for (uint256 j = 0; j < baseAssets.length; j++) {
-                if (markets[owner][baseAssets[j]].active) {
-                    totalCount++;
+        // Use allMarkets array which already has all markets
+        uint256 totalMarkets = allMarkets.length;
+        uint256 activeCount;
+        
+        // First pass: count active markets
+        unchecked {
+            for (uint256 i; i < totalMarkets; ++i) {
+                if (allMarkets[i].active) {
+                    ++activeCount;
                 }
             }
         }
-
-        // Then populate the array
-        IPROTOCOL.Market[] memory activeMarkets = new IPROTOCOL.Market[](totalCount);
-        uint256 index = 0;
-
-        for (uint256 i = 0; i < allMarketOwners.length; i++) {
-            address owner = allMarketOwners[i];
-            address[] memory baseAssets = ownerBaseAssets[owner];
-
-            for (uint256 j = 0; j < baseAssets.length; j++) {
-                if (markets[owner][baseAssets[j]].active) {
-                    activeMarkets[index] = markets[owner][baseAssets[j]];
-                    index++;
+        
+        // Allocate result array
+        IPROTOCOL.Market[] memory activeMarkets = new IPROTOCOL.Market[](activeCount);
+        
+        // Second pass: populate active markets
+        if (activeCount > 0) {
+            uint256 index;
+            unchecked {
+                for (uint256 i; i < totalMarkets; ++i) {
+                    if (allMarkets[i].active) {
+                        activeMarkets[index++] = allMarkets[i];
+                        if (index == activeCount) break; // Early exit when all found
+                    }
                 }
             }
         }
-
+        
         return activeMarkets;
     }
 
@@ -654,58 +659,6 @@ contract LendefiMarketFactoryV2 is Initializable, AccessControlUpgradeable, UUPS
      */
     function getTotalMarketsCount() external view returns (uint256) {
         return allMarkets.length;
-    }
-
-    // ========== BACKWARD COMPATIBILITY FUNCTIONS ==========
-
-    /**
-     * @notice Backward compatibility function for single-tenant market access
-     * @dev Looks for market owned by any owner - returns first found (for legacy test compatibility)
-     * @param baseAsset Address of the base asset
-     * @return Market configuration struct
-     */
-    function getMarketInfo(address baseAsset) external view returns (IPROTOCOL.Market memory) {
-        // Look through all market owners to find this base asset
-        for (uint256 i = 0; i < allMarketOwners.length; i++) {
-            address owner = allMarketOwners[i];
-            if (markets[owner][baseAsset].core != address(0)) {
-                return markets[owner][baseAsset];
-            }
-        }
-        revert MarketNotFound();
-    }
-
-    /**
-     * @notice Backward compatibility function for checking market active status
-     * @dev Looks for market owned by any owner - returns first found (for legacy test compatibility)
-     * @param baseAsset Address of the base asset
-     * @return True if market is active
-     */
-    function isMarketActive(address baseAsset) external view returns (bool) {
-        // Look through all market owners to find this base asset
-        for (uint256 i = 0; i < allMarketOwners.length; i++) {
-            address owner = allMarketOwners[i];
-            if (markets[owner][baseAsset].core != address(0)) {
-                return markets[owner][baseAsset].active;
-            }
-        }
-        return false;
-    }
-
-    /**
-     * @notice Backward compatibility function that returns base asset addresses
-     * @dev For tests that expect address[] instead of Market[]
-     * @return Array of base asset addresses for active markets
-     */
-    function getAllActiveMarketsAddresses() external view returns (address[] memory) {
-        IPROTOCOL.Market[] memory activeMarkets = this.getAllActiveMarkets();
-        address[] memory addresses = new address[](activeMarkets.length);
-
-        for (uint256 i = 0; i < activeMarkets.length; i++) {
-            addresses[i] = activeMarkets[i].baseAsset;
-        }
-
-        return addresses;
     }
 
     // ========== UUPS UPGRADE AUTHORIZATION ==========
