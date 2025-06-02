@@ -98,9 +98,6 @@ contract LendefiMarketFactoryV2 is Initializable, AccessControlUpgradeable, UUPS
     /// @dev First key: market owner address, Second key: base asset address, Value: Market struct
     mapping(address => mapping(address => IPROTOCOL.Market)) public markets;
 
-    /// @notice Nested mapping of market owner to base asset to assets module address
-    /// @dev First key: market owner address, Second key: base asset address, Value: assets module address
-    mapping(address => mapping(address => address)) public marketAssetsModule;
 
     /// @notice Mapping to track all base assets for each market owner
     /// @dev Key: market owner address, Value: array of base asset addresses they've created markets for
@@ -441,6 +438,7 @@ contract LendefiMarketFactoryV2 is Initializable, AccessControlUpgradeable, UUPS
             core: coreProxy,
             baseVault: vaultProxy,
             baseAsset: baseAsset,
+            assetsModule: assetsModule,
             porFeed: porFeedClone,
             decimals: IERC20Metadata(baseAsset).decimals(),
             name: name,
@@ -451,9 +449,6 @@ contract LendefiMarketFactoryV2 is Initializable, AccessControlUpgradeable, UUPS
 
         // Store market information in nested mapping
         markets[marketOwner][baseAsset] = marketInfo;
-
-        // Store the assets module for this market
-        marketAssetsModule[marketOwner][baseAsset] = assetsModule;
 
         // Track base assets for this owner
         ownerBaseAssets[marketOwner].push(baseAsset);
