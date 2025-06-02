@@ -173,10 +173,9 @@ contract LendefiMarketFactoryTest is BasicDeploy {
     }
 
     function test_Revert_CreateMarket_Unauthorized() public {
-        bytes32 MARKET_OWNER_ROLE = keccak256("MARKET_OWNER_ROLE");
         vm.prank(alice);
         vm.expectRevert(
-            abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, alice, MARKET_OWNER_ROLE)
+            abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, alice, LendefiConstants.MARKET_OWNER_ROLE)
         );
         marketFactoryInstance.createMarket(address(daiToken), "Unauthorized Market", "UNAUTH");
     }
@@ -507,7 +506,7 @@ contract LendefiMarketFactoryTest is BasicDeploy {
         // Grant MARKET_OWNER_ROLE to alice and create a market for her
         // Use startPrank/stopPrank instead of just prank to ensure it works correctly
         vm.startPrank(address(timelockInstance));
-        marketFactoryInstance.grantRole(marketFactoryInstance.MARKET_OWNER_ROLE(), alice);
+        marketFactoryInstance.grantRole(LendefiConstants.MARKET_OWNER_ROLE, alice);
         vm.stopPrank();
 
         vm.prank(alice);
@@ -554,7 +553,7 @@ contract LendefiMarketFactoryTest is BasicDeploy {
 
         // Grant MARKET_OWNER_ROLE to alice and create a market
         vm.startPrank(address(timelockInstance));
-        marketFactoryInstance.grantRole(marketFactoryInstance.MARKET_OWNER_ROLE(), alice);
+        marketFactoryInstance.grantRole(LendefiConstants.MARKET_OWNER_ROLE, alice);
         vm.stopPrank();
 
         vm.prank(alice);
@@ -565,7 +564,7 @@ contract LendefiMarketFactoryTest is BasicDeploy {
 
         // Grant MARKET_OWNER_ROLE to bob and create a market
         vm.startPrank(address(timelockInstance));
-        marketFactoryInstance.grantRole(marketFactoryInstance.MARKET_OWNER_ROLE(), bob);
+        marketFactoryInstance.grantRole(LendefiConstants.MARKET_OWNER_ROLE, bob);
         vm.stopPrank();
 
         vm.prank(bob);
@@ -581,7 +580,7 @@ contract LendefiMarketFactoryTest is BasicDeploy {
 
         // Grant MARKET_OWNER_ROLE to alice and create a market
         vm.startPrank(address(timelockInstance));
-        marketFactoryInstance.grantRole(marketFactoryInstance.MARKET_OWNER_ROLE(), alice);
+        marketFactoryInstance.grantRole(LendefiConstants.MARKET_OWNER_ROLE, alice);
         vm.stopPrank();
 
         vm.prank(alice);
@@ -616,7 +615,7 @@ contract LendefiMarketFactoryTest is BasicDeploy {
 
         // Grant MARKET_OWNER_ROLE to alice and create a market
         vm.startPrank(address(timelockInstance));
-        marketFactoryInstance.grantRole(marketFactoryInstance.MARKET_OWNER_ROLE(), alice);
+        marketFactoryInstance.grantRole(LendefiConstants.MARKET_OWNER_ROLE, alice);
         vm.stopPrank();
 
         vm.prank(alice);
@@ -629,7 +628,7 @@ contract LendefiMarketFactoryTest is BasicDeploy {
     function test_MultiTenant_MarketIsolation() public {
         // Grant MARKET_OWNER_ROLE to alice
         vm.startPrank(address(timelockInstance));
-        marketFactoryInstance.grantRole(marketFactoryInstance.MARKET_OWNER_ROLE(), alice);
+        marketFactoryInstance.grantRole(LendefiConstants.MARKET_OWNER_ROLE, alice);
         vm.stopPrank();
 
         // Both charlie and alice create DAI markets
@@ -671,7 +670,7 @@ contract LendefiMarketFactoryTest is BasicDeploy {
 
         // Grant MARKET_OWNER_ROLE to alice
         vm.startPrank(address(timelockInstance));
-        marketFactoryInstance.grantRole(marketFactoryInstance.MARKET_OWNER_ROLE(), alice);
+        marketFactoryInstance.grantRole(LendefiConstants.MARKET_OWNER_ROLE, alice);
         vm.stopPrank();
 
         // Create markets for multiple owners
