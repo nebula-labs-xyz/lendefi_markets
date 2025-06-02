@@ -52,7 +52,7 @@ contract AssetModuleOracleTest is BasicDeploy {
     // Then modify your setUp() function to call this
     function setUp() public {
         // Initial deployment with oracle
-        deployCompleteWithOracle();
+        deployMarketsWithUSDC();
 
         // Deploy test tokens
         wethInstance = new WETH9();
