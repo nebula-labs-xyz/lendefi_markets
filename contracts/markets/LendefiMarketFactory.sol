@@ -390,7 +390,7 @@ contract LendefiMarketFactory is Initializable, AccessControlUpgradeable, UUPSUp
 
         // Initialize core contract through proxy
         bytes memory initData = abi.encodeWithSelector(
-            LendefiCore.initialize.selector, timelock, govToken, assetsModule, treasury, positionVaultImplementation
+            LendefiCore.initialize.selector, timelock, govToken, assetsModule, positionVaultImplementation
         );
         coreProxy = address(new TransparentUpgradeableProxy(core, timelock, initData));
 
