@@ -28,8 +28,8 @@ contract MarketFactoryTest is BasicDeploy {
     }
 
     function testCreateMarket() public {
-        // Create market with first test asset
-        vm.prank(address(timelockInstance));
+        // Create market with first test asset (charlie has MARKET_OWNER_ROLE from BasicDeploy)
+        vm.prank(charlie);
         marketFactoryInstance.createMarket(address(baseAsset1), "Test Market 1", "TM1");
 
         // Verify market creation
@@ -44,7 +44,7 @@ contract MarketFactoryTest is BasicDeploy {
         assertTrue(createdMarket.baseVault != address(0));
 
         // Check market exists in arrays
-        address[] memory activeMarkets = marketFactoryInstance.getAllActiveMarkets();
+        address[] memory activeMarkets = marketFactoryInstance.getAllActiveMarketsAddresses();
         assertGe(activeMarkets.length, 1);
 
         // Should contain our new market
@@ -59,19 +59,19 @@ contract MarketFactoryTest is BasicDeploy {
     }
 
     function testCannotCreateMarketWithZeroAddress() public {
-        vm.prank(address(timelockInstance));
+        vm.prank(charlie);
         vm.expectRevert(abi.encodeWithSignature("ZeroAddress()"));
         marketFactoryInstance.createMarket(address(0), "Test Market", "TMKT");
     }
 
     function testCannotCreateDuplicateMarket() public {
         // Create first market
-        vm.prank(address(timelockInstance));
+        vm.prank(charlie);
         marketFactoryInstance.createMarket(address(baseAsset1), "Test Market", "TMKT");
 
         // Try to create duplicate
         vm.expectRevert(abi.encodeWithSignature("MarketAlreadyExists()"));
-        vm.prank(address(timelockInstance));
+        vm.prank(charlie);
         marketFactoryInstance.createMarket(address(baseAsset1), "Test Market", "TMKT");
     }
 
@@ -82,18 +82,18 @@ contract MarketFactoryTest is BasicDeploy {
     }
 
     function testGetAllActiveMarkets() public {
-        uint256 initialMarkets = marketFactoryInstance.getAllActiveMarkets().length;
+        uint256 initialMarkets = marketFactoryInstance.getAllActiveMarketsAddresses().length;
 
         // Create first market
-        vm.prank(address(timelockInstance));
+        vm.prank(charlie);
         marketFactoryInstance.createMarket(address(baseAsset1), "Test Market 1", "TM1");
 
         // Create second market
-        vm.prank(address(timelockInstance));
+        vm.prank(charlie);
         marketFactoryInstance.createMarket(address(baseAsset2), "Test Market 2", "TM2");
 
         // Get all active markets
-        address[] memory activeMarkets = marketFactoryInstance.getAllActiveMarkets();
+        address[] memory activeMarkets = marketFactoryInstance.getAllActiveMarketsAddresses();
         assertEq(activeMarkets.length, initialMarkets + 2);
 
         // Check that our markets are included
