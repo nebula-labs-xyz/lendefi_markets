@@ -22,7 +22,7 @@ contract AssetsInitializeTest is BasicDeploy {
     function setUp() public {
         // Deploy the oracle first
         wethInstance = new WETH9();
-        deployCompleteWithOracle();
+        deployMarketsWithUSDC();
 
         // Store addresses for initialization
         timelockAddr = address(timelockInstance);
