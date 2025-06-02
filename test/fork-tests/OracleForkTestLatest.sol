@@ -38,20 +38,18 @@ contract OracleForkTest is BasicDeploy {
         // Deploy protocol normally
         // First warp to a reasonable time for treasury deployment
         vm.warp(365 days);
-        
+
         // Deploy base contracts
         _deployTimelock();
         _deployToken();
         _deployEcosystem();
         _deployTreasury();
         _deployGovernor();
-        _deployAssetsModule();
         _deployMarketFactory();
-        
+
         // Deploy USDC market
-        if (address(usdcInstance) == address(0)) usdcInstance = new USDC();
         _deployMarket(address(usdcInstance), "Lendefi Yield Token", "LYTUSDC");
-        
+
         // Now warp to current time to match oracle data
         vm.warp(1748748827 + 3600); // Oracle timestamp + 1 hour
 
