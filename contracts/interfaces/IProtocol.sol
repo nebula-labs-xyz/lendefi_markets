@@ -113,6 +113,7 @@ interface IPROTOCOL {
         address core; // Core lending logic contract
         address baseVault; // Vault handling base asset
         address baseAsset; // Base asset address (e.g. USDC)
+        address assetsModule; // Assets module for asset management and oracles
         address porFeed; // Proof of Reserve feed
         uint256 decimals; // Base asset decimals
         string name; // Market name (e.g. "USDC Market")
