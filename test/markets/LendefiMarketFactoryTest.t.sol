@@ -8,6 +8,7 @@ import {TokenMock} from "../../contracts/mock/TokenMock.sol";
 import {LendefiCore} from "../../contracts/markets/LendefiCore.sol";
 import {LendefiMarketVault} from "../../contracts/markets/LendefiMarketVault.sol";
 import {LendefiMarketFactory} from "../../contracts/markets/LendefiMarketFactory.sol";
+import {ILendefiMarketFactory} from "../../contracts/interfaces/ILendefiMarketFactory.sol";
 import {LendefiPositionVault} from "../../contracts/markets/LendefiPositionVault.sol";
 import {WETH9} from "../../contracts/vendor/canonical-weth/contracts/WETH9.sol";
 import {WETHPriceConsumerV3} from "../../contracts/mock/WETHOracle.sol";
@@ -80,7 +81,7 @@ contract LendefiMarketFactoryTest is BasicDeploy {
         LendefiPoRFeed porFeedImpl = new LendefiPoRFeed();
 
         vm.expectEmit(true, true, true, true);
-        emit LendefiMarketFactory.ImplementationsSet(address(newCoreImpl), address(newVaultImpl), address(posVaultImpl));
+        emit ILendefiMarketFactory.ImplementationsSet(address(newCoreImpl), address(newVaultImpl), address(posVaultImpl));
 
         vm.prank(address(timelockInstance));
         marketFactoryInstance.setImplementations(
@@ -162,13 +163,13 @@ contract LendefiMarketFactoryTest is BasicDeploy {
     function test_Revert_CreateMarket_Duplicate() public {
         // Try to create another USDC market (charlie already has a USDC market from BasicDeploy)
         vm.prank(charlie);
-        vm.expectRevert(LendefiMarketFactory.MarketAlreadyExists.selector);
+        vm.expectRevert(ILendefiMarketFactory.MarketAlreadyExists.selector);
         marketFactoryInstance.createMarket(address(usdcInstance), "Duplicate Market", "DUP");
     }
 
     function test_Revert_CreateMarket_ZeroAsset() public {
         vm.prank(charlie);
-        vm.expectRevert(LendefiMarketFactory.ZeroAddress.selector);
+        vm.expectRevert(ILendefiMarketFactory.ZeroAddress.selector);
         marketFactoryInstance.createMarket(address(0), "Bad Market", "BAD");
     }
 
@@ -192,12 +193,12 @@ contract LendefiMarketFactoryTest is BasicDeploy {
     }
 
     function test_Revert_GetMarketInfo_NotFound() public {
-        vm.expectRevert(LendefiMarketFactory.MarketNotFound.selector);
+        vm.expectRevert(ILendefiMarketFactory.MarketNotFound.selector);
         marketFactoryInstance.getMarketInfo(charlie, address(daiToken));
     }
 
     function test_Revert_GetMarketInfo_ZeroAddress() public {
-        vm.expectRevert(LendefiMarketFactory.ZeroAddress.selector);
+        vm.expectRevert(ILendefiMarketFactory.ZeroAddress.selector);
         marketFactoryInstance.getMarketInfo(charlie, address(0));
     }
 
@@ -307,7 +308,7 @@ contract LendefiMarketFactoryTest is BasicDeploy {
         // Cancel the upgrade
         vm.prank(address(timelockInstance));
         vm.expectEmit(true, true, false, true);
-        emit UpgradeCancelled(address(timelockInstance), address(newImpl));
+        emit ILendefiMarketFactory.UpgradeCancelled(address(timelockInstance), address(newImpl));
         marketFactoryInstance.cancelUpgrade();
 
         // Verify upgrade is cancelled
@@ -721,6 +722,4 @@ contract LendefiMarketFactoryTest is BasicDeploy {
         assertTrue(foundAliceUSDT, "Alice's USDT market should be found");
     }
 
-    // Add missing events
-    event UpgradeCancelled(address indexed canceller, address indexed implementation);
 }
