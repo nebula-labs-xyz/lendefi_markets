@@ -31,7 +31,6 @@ contract ProxyDeployerTest is BasicDeploy {
             address(testToken),
             address(timelockInstance),
             address(tokenInstance),
-            address(treasuryInstance),
             address(ecoInstance),
             address(assetsInstance),
             "Test Vault",
