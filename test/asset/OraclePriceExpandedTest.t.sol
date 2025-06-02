@@ -29,8 +29,7 @@ contract OraclePriceExpandedTest is BasicDeploy {
     event CircuitBreakerReset(address indexed asset);
 
     function setUp() public {
-        deployCompleteWithOracle();
-        _deployMarket(address(usdcInstance), "Lendefi Yield Token", "LYTUSDC");
+        deployMarketsWithUSDC();
 
         // TGE setup
         vm.prank(guardian);
