@@ -43,6 +43,7 @@ import {LendefiMarketVault} from "../../contracts/markets/LendefiMarketVault.sol
 import {LendefiMarketVaultV2} from "../../contracts/upgrades/LendefiMarketVaultV2.sol";
 import {LendefiPositionVault} from "../../contracts/markets/LendefiPositionVault.sol";
 import {LendefiPoRFeed} from "../../contracts/markets/LendefiPoRFeed.sol";
+import {LendefiConstants} from "../../contracts/markets/lib/LendefiConstants.sol";
 
 contract BasicDeploy is Test {
     event Upgrade(address indexed src, address indexed implementation);
@@ -766,7 +767,7 @@ contract BasicDeploy is Test {
 
         // Grant MARKET_OWNER_ROLE to charlie (must be done by timelock since it has DEFAULT_ADMIN_ROLE)
         vm.startPrank(address(timelockInstance));
-        marketFactoryInstance.grantRole(marketFactoryInstance.MARKET_OWNER_ROLE(), charlie);
+        marketFactoryInstance.grantRole(LendefiConstants.MARKET_OWNER_ROLE, charlie);
         vm.stopPrank();
 
         // Create market via factory (charlie as market owner)
