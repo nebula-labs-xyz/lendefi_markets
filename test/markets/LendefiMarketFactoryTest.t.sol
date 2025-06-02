@@ -238,10 +238,14 @@ contract LendefiMarketFactoryTest is BasicDeploy {
         vm.prank(charlie);
         marketFactoryInstance.createMarket(address(usdtToken), "Lendefi USDT Market", "lfUSDT");
 
-        // Get the assets modules for each market
-        address usdcAssetsModule = marketFactoryInstance.marketAssetsModule(charlie, address(usdcInstance));
-        address daiAssetsModule = marketFactoryInstance.marketAssetsModule(charlie, address(daiToken));
-        address usdtAssetsModule = marketFactoryInstance.marketAssetsModule(charlie, address(usdtToken));
+        // Get the assets modules for each market from the market structs
+        IPROTOCOL.Market memory usdcMarket = marketFactoryInstance.getMarketInfo(charlie, address(usdcInstance));
+        IPROTOCOL.Market memory daiMarket = marketFactoryInstance.getMarketInfo(charlie, address(daiToken));
+        IPROTOCOL.Market memory usdtMarket = marketFactoryInstance.getMarketInfo(charlie, address(usdtToken));
+        
+        address usdcAssetsModule = usdcMarket.assetsModule;
+        address daiAssetsModule = daiMarket.assetsModule;
+        address usdtAssetsModule = usdtMarket.assetsModule;
 
         // Verify each market has its own unique assets module
         assertTrue(usdcAssetsModule != address(0), "USDC assets module should exist");
