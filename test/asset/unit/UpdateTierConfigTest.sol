@@ -40,8 +40,7 @@ contract UpdateTierConfigTest is BasicDeploy {
         usdcOracleInstance.setAnsweredInRound(1);
 
         // Deploy all contracts including the Oracle module
-        deployCompleteWithOracle();
-        _deployMarket(address(usdcInstance), "Lendefi Yield Token", "LYTUSDC");
+        deployMarketsWithUSDC();
 
         // TGE setup
         vm.prank(guardian);
