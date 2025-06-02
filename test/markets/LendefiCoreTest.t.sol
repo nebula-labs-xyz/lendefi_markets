@@ -171,7 +171,6 @@ contract LendefiCoreTest is BasicDeploy {
     function test_Initialize() public {
         // Check initial state
         assertEq(address(marketCoreInstance.baseAsset()), address(usdcInstance));
-        assertEq(address(marketCoreInstance.treasury()), address(treasuryInstance));
         assertEq(marketCoreInstance.govToken(), address(tokenInstance));
         assertEq(marketCoreInstance.baseDecimals(), 10 ** 6); // USDC has 6 decimals
     }
@@ -186,7 +185,6 @@ contract LendefiCoreTest is BasicDeploy {
             address(timelockInstance),
             address(tokenInstance),
             address(assetsInstance),
-            address(treasuryInstance),
             address(vaultImpl)
         );
     }
