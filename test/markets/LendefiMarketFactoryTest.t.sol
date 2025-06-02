@@ -113,8 +113,8 @@ contract LendefiMarketFactoryTest is BasicDeploy {
     // ============ Market Creation Tests ============
 
     function test_CreateMarket_USDC() public {
-        // USDC market is already created in setup
-        IPROTOCOL.Market memory market = marketFactoryInstance.getMarketInfo(address(usdcInstance));
+        // USDC market is already created in setup - charlie is the owner
+        IPROTOCOL.Market memory market = marketFactoryInstance.getMarketInfo(charlie, address(usdcInstance));
 
         assertEq(market.baseAsset, address(usdcInstance));
         assertEq(market.name, "Lendefi Yield Token"); // This is the name used in deployMarketsWithUSDC
@@ -131,7 +131,7 @@ contract LendefiMarketFactoryTest is BasicDeploy {
         marketFactoryInstance.createMarket(address(daiToken), "Lendefi DAI Market", "lfDAI");
 
         // Verify market was created
-        IPROTOCOL.Market memory createdMarket = marketFactoryInstance.getMarketInfo(address(daiToken));
+        IPROTOCOL.Market memory createdMarket = marketFactoryInstance.getMarketInfo(charlie, address(daiToken));
         assertEq(createdMarket.baseAsset, address(daiToken));
         assertEq(createdMarket.name, "Lendefi DAI Market");
         assertTrue(createdMarket.core != address(0));
@@ -152,7 +152,7 @@ contract LendefiMarketFactoryTest is BasicDeploy {
         vm.prank(charlie);
         marketFactoryInstance.createMarket(address(usdtToken), "Lendefi USDT Market", "lfUSDT");
 
-        IPROTOCOL.Market memory createdMarket = marketFactoryInstance.getMarketInfo(address(usdtToken));
+        IPROTOCOL.Market memory createdMarket = marketFactoryInstance.getMarketInfo(charlie, address(usdtToken));
         LendefiCore usdtCore = LendefiCore(createdMarket.core);
 
         // Verify WAD is correctly set for 6 decimal token
@@ -184,7 +184,7 @@ contract LendefiMarketFactoryTest is BasicDeploy {
     // ============ Market Query Tests ============
 
     function test_GetMarketInfo() public {
-        IPROTOCOL.Market memory market = marketFactoryInstance.getMarketInfo(address(usdcInstance));
+        IPROTOCOL.Market memory market = marketFactoryInstance.getMarketInfo(charlie, address(usdcInstance));
 
         assertEq(market.baseAsset, address(usdcInstance));
         assertEq(market.core, address(marketCoreInstance));
@@ -194,7 +194,7 @@ contract LendefiMarketFactoryTest is BasicDeploy {
 
     function test_Revert_GetMarketInfo_NotFound() public {
         vm.expectRevert(LendefiMarketFactory.MarketNotFound.selector);
-        marketFactoryInstance.getMarketInfo(address(daiToken));
+        marketFactoryInstance.getMarketInfo(charlie, address(daiToken));
     }
 
     function test_Revert_GetMarketInfo_ZeroAddress() public {
@@ -203,15 +203,15 @@ contract LendefiMarketFactoryTest is BasicDeploy {
     }
 
     function test_IsMarketActive() public {
-        assertTrue(marketFactoryInstance.isMarketActive(address(usdcInstance)));
-        assertFalse(marketFactoryInstance.isMarketActive(address(daiToken)));
+        assertTrue(marketFactoryInstance.isMarketActive(charlie, address(usdcInstance)));
+        assertFalse(marketFactoryInstance.isMarketActive(charlie, address(daiToken)));
     }
 
     function test_GetAllActiveMarkets() public {
         // Initially only USDC market
-        address[] memory activeMarkets = marketFactoryInstance.getAllActiveMarketsAddresses();
+        IPROTOCOL.Market[] memory activeMarkets = marketFactoryInstance.getAllActiveMarkets();
         assertEq(activeMarkets.length, 1);
-        assertEq(activeMarkets[0], address(usdcInstance));
+        assertEq(activeMarkets[0].baseAsset, address(usdcInstance));
 
         // Create DAI market
         vm.prank(charlie);
@@ -222,11 +222,11 @@ contract LendefiMarketFactoryTest is BasicDeploy {
         marketFactoryInstance.createMarket(address(usdtToken), "Lendefi USDT Market", "lfUSDT");
 
         // Should have 3 active markets
-        activeMarkets = marketFactoryInstance.getAllActiveMarketsAddresses();
+        activeMarkets = marketFactoryInstance.getAllActiveMarkets();
         assertEq(activeMarkets.length, 3);
-        assertEq(activeMarkets[0], address(usdcInstance));
-        assertEq(activeMarkets[1], address(daiToken));
-        assertEq(activeMarkets[2], address(usdtToken));
+        assertEq(activeMarkets[0].baseAsset, address(usdcInstance));
+        assertEq(activeMarkets[1].baseAsset, address(daiToken));
+        assertEq(activeMarkets[2].baseAsset, address(usdtToken));
     }
 
     function test_EachMarketHasOwnAssetsModule() public {
