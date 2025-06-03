@@ -358,12 +358,8 @@ interface IPROTOCOL {
      * @param assetsModule_ The address of the assets module
      * @param vaultImplementation The address of the vault implementation contract
      */
-    function initialize(
-        address admin,
-        address govToken_,
-        address assetsModule_,
-        address vaultImplementation
-    ) external;
+    function initialize(address admin, address govToken_, address assetsModule_, address vaultImplementation)
+        external;
 
     /**
      * @notice Initializes the market with market info
@@ -487,7 +483,6 @@ interface IPROTOCOL {
      * @return The governance token contract address
      */
     function govToken() external view returns (address);
-
 
     /**
      * @notice Gets the address of the base asset
