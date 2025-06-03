@@ -101,4 +101,28 @@ contract AllowlistTest is BasicDeploy {
         // USDC should already be in allowlist from BasicDeploy
         assertTrue(marketFactoryInstance.isBaseAssetAllowed(address(usdcInstance)));
     }
+
+    function test_GetAllowedBaseAssetsCount() public {
+        // Initially should have 1 asset (USDC from BasicDeploy)
+        uint256 initialCount = marketFactoryInstance.getAllowedBaseAssetsCount();
+        assertEq(initialCount, 1);
+
+        // Add test token to allowlist
+        vm.prank(gnosisSafe);
+        marketFactoryInstance.addAllowedBaseAsset(address(testToken));
+
+        // Count should increase to 2
+        uint256 newCount = marketFactoryInstance.getAllowedBaseAssetsCount();
+        assertEq(newCount, 2);
+        assertEq(newCount, initialCount + 1);
+
+        // Remove test token
+        vm.prank(gnosisSafe);
+        marketFactoryInstance.removeAllowedBaseAsset(address(testToken));
+
+        // Count should return to original
+        uint256 finalCount = marketFactoryInstance.getAllowedBaseAssetsCount();
+        assertEq(finalCount, initialCount);
+        assertEq(finalCount, 1);
+    }
 }
