@@ -48,6 +48,20 @@ contract LendefiMarketFactoryTest is BasicDeploy {
         wethInstance = new WETH9();
     }
 
+    // ============ Helper Functions ============
+
+    function addAssetToAllowlist(address asset) internal {
+        vm.prank(gnosisSafe);
+        marketFactoryInstance.addAllowedBaseAsset(asset);
+    }
+
+    function addMultipleAssetsToAllowlist() internal {
+        vm.startPrank(gnosisSafe);
+        marketFactoryInstance.addAllowedBaseAsset(address(daiToken));
+        marketFactoryInstance.addAllowedBaseAsset(address(usdtToken));
+        vm.stopPrank();
+    }
+
     // ============ Factory Initialization Tests ============
 
     function test_FactoryInitialize() public {
@@ -81,7 +95,9 @@ contract LendefiMarketFactoryTest is BasicDeploy {
         LendefiPoRFeed porFeedImpl = new LendefiPoRFeed();
 
         vm.expectEmit(true, true, true, true);
-        emit ILendefiMarketFactory.ImplementationsSet(address(newCoreImpl), address(newVaultImpl), address(posVaultImpl));
+        emit ILendefiMarketFactory.ImplementationsSet(
+            address(newCoreImpl), address(newVaultImpl), address(posVaultImpl)
+        );
 
         vm.prank(address(timelockInstance));
         marketFactoryInstance.setImplementations(
@@ -128,6 +144,8 @@ contract LendefiMarketFactoryTest is BasicDeploy {
     }
 
     function test_CreateMarket_DAI() public {
+        addAssetToAllowlist(address(daiToken));
+
         vm.prank(charlie);
         marketFactoryInstance.createMarket(address(daiToken), "Lendefi DAI Market", "lfDAI");
 
@@ -150,6 +168,8 @@ contract LendefiMarketFactoryTest is BasicDeploy {
     }
 
     function test_CreateMarket_USDT_6Decimals() public {
+        addAssetToAllowlist(address(usdtToken));
+
         vm.prank(charlie);
         marketFactoryInstance.createMarket(address(usdtToken), "Lendefi USDT Market", "lfUSDT");
 
@@ -169,14 +189,16 @@ contract LendefiMarketFactoryTest is BasicDeploy {
 
     function test_Revert_CreateMarket_ZeroAsset() public {
         vm.prank(charlie);
-        vm.expectRevert(ILendefiMarketFactory.ZeroAddress.selector);
+        vm.expectRevert(ILendefiMarketFactory.BaseAssetNotAllowed.selector);
         marketFactoryInstance.createMarket(address(0), "Bad Market", "BAD");
     }
 
     function test_Revert_CreateMarket_Unauthorized() public {
         vm.prank(alice);
         vm.expectRevert(
-            abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, alice, LendefiConstants.MARKET_OWNER_ROLE)
+            abi.encodeWithSelector(
+                IAccessControl.AccessControlUnauthorizedAccount.selector, alice, LendefiConstants.MARKET_OWNER_ROLE
+            )
         );
         marketFactoryInstance.createMarket(address(daiToken), "Unauthorized Market", "UNAUTH");
     }
@@ -184,6 +206,7 @@ contract LendefiMarketFactoryTest is BasicDeploy {
     // ============ Market Query Tests ============
 
     function test_GetMarketInfo() public {
+        addMultipleAssetsToAllowlist();
         IPROTOCOL.Market memory market = marketFactoryInstance.getMarketInfo(charlie, address(usdcInstance));
 
         assertEq(market.baseAsset, address(usdcInstance));
@@ -208,6 +231,8 @@ contract LendefiMarketFactoryTest is BasicDeploy {
     }
 
     function test_GetAllActiveMarkets() public {
+        addMultipleAssetsToAllowlist();
+
         // Initially only USDC market
         IPROTOCOL.Market[] memory activeMarkets = marketFactoryInstance.getAllActiveMarkets();
         assertEq(activeMarkets.length, 1);
@@ -230,6 +255,8 @@ contract LendefiMarketFactoryTest is BasicDeploy {
     }
 
     function test_EachMarketHasOwnAssetsModule() public {
+        addMultipleAssetsToAllowlist();
+
         // Create DAI market as Charlie
         vm.prank(charlie);
         marketFactoryInstance.createMarket(address(daiToken), "Lendefi DAI Market", "lfDAI");
@@ -242,7 +269,7 @@ contract LendefiMarketFactoryTest is BasicDeploy {
         IPROTOCOL.Market memory usdcMarket = marketFactoryInstance.getMarketInfo(charlie, address(usdcInstance));
         IPROTOCOL.Market memory daiMarket = marketFactoryInstance.getMarketInfo(charlie, address(daiToken));
         IPROTOCOL.Market memory usdtMarket = marketFactoryInstance.getMarketInfo(charlie, address(usdtToken));
-        
+
         address usdcAssetsModule = usdcMarket.assetsModule;
         address daiAssetsModule = daiMarket.assetsModule;
         address usdtAssetsModule = usdtMarket.assetsModule;
@@ -460,6 +487,7 @@ contract LendefiMarketFactoryTest is BasicDeploy {
     // ============ Multi-Tenant Functions Tests ============
 
     function test_IsMarketActive_MultiTenant() public {
+        addMultipleAssetsToAllowlist();
         // Test with charlie's existing USDC market
         assertTrue(marketFactoryInstance.isMarketActive(charlie, address(usdcInstance)));
 
@@ -479,6 +507,8 @@ contract LendefiMarketFactoryTest is BasicDeploy {
     }
 
     function test_GetOwnerMarkets() public {
+        addMultipleAssetsToAllowlist();
+
         // Initially charlie should have 1 market (USDC from BasicDeploy)
         IPROTOCOL.Market[] memory charlieMarkets = marketFactoryInstance.getOwnerMarkets(charlie);
         assertEq(charlieMarkets.length, 1);
@@ -525,6 +555,7 @@ contract LendefiMarketFactoryTest is BasicDeploy {
     }
 
     function test_GetOwnerBaseAssets() public {
+        addMultipleAssetsToAllowlist();
         // Initially charlie should have 1 base asset (USDC)
         address[] memory charlieAssets = marketFactoryInstance.getOwnerBaseAssets(charlie);
         assertEq(charlieAssets.length, 1);
@@ -549,6 +580,7 @@ contract LendefiMarketFactoryTest is BasicDeploy {
     }
 
     function test_GetMarketOwnersCount() public {
+        addMultipleAssetsToAllowlist();
         // Initially should have 1 owner (charlie from BasicDeploy)
         assertEq(marketFactoryInstance.getMarketOwnersCount(), 1);
 
@@ -576,6 +608,7 @@ contract LendefiMarketFactoryTest is BasicDeploy {
     }
 
     function test_GetMarketOwnerByIndex() public {
+        addMultipleAssetsToAllowlist();
         // Initially should have charlie as the only owner
         assertEq(marketFactoryInstance.getMarketOwnerByIndex(0), charlie);
 
@@ -602,6 +635,7 @@ contract LendefiMarketFactoryTest is BasicDeploy {
     }
 
     function test_GetTotalMarketsCount() public {
+        addMultipleAssetsToAllowlist();
         // Initially should have 1 market (charlie's USDC from BasicDeploy)
         assertEq(marketFactoryInstance.getTotalMarketsCount(), 1);
 
@@ -627,6 +661,7 @@ contract LendefiMarketFactoryTest is BasicDeploy {
     }
 
     function test_MultiTenant_MarketIsolation() public {
+        addMultipleAssetsToAllowlist();
         // Grant MARKET_OWNER_ROLE to alice
         vm.startPrank(address(timelockInstance));
         marketFactoryInstance.grantRole(LendefiConstants.MARKET_OWNER_ROLE, alice);
@@ -665,6 +700,7 @@ contract LendefiMarketFactoryTest is BasicDeploy {
     }
 
     function test_GetAllActiveMarkets_MultiTenant() public {
+        addMultipleAssetsToAllowlist();
         // Initial state: 1 active market (charlie's USDC)
         IPROTOCOL.Market[] memory activeMarkets = marketFactoryInstance.getAllActiveMarkets();
         assertEq(activeMarkets.length, 1);
@@ -721,5 +757,4 @@ contract LendefiMarketFactoryTest is BasicDeploy {
         assertTrue(foundAliceDAI, "Alice's DAI market should be found");
         assertTrue(foundAliceUSDT, "Alice's USDT market should be found");
     }
-
 }
