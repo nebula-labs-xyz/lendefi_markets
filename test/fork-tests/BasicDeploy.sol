@@ -768,7 +768,7 @@ contract BasicDeploy is Test {
         // Grant MARKET_OWNER_ROLE to charlie (done by timelock which has DEFAULT_ADMIN_ROLE)
         vm.prank(address(timelockInstance));
         marketFactoryInstance.grantRole(LendefiConstants.MARKET_OWNER_ROLE, charlie);
-        
+
         // Add base asset to allowlist (done by multisig which has MANAGER_ROLE)
         vm.prank(gnosisSafe);
         marketFactoryInstance.addAllowedBaseAsset(baseAsset);
