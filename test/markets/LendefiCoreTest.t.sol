@@ -182,10 +182,7 @@ contract LendefiCoreTest is BasicDeploy {
 
         vm.expectRevert(); // Expect revert for already initialized
         marketCoreInstance.initialize(
-            address(timelockInstance),
-            address(tokenInstance),
-            address(assetsInstance),
-            address(vaultImpl)
+            address(timelockInstance), address(tokenInstance), address(assetsInstance), address(vaultImpl)
         );
     }
 
@@ -1130,7 +1127,7 @@ contract LendefiCoreTest is BasicDeploy {
 
         assertTrue(isSolvent);
         // Total asset value should include:
-        // - Base vault assets (initial liquidity - borrowed amount) 
+        // - Base vault assets (initial liquidity - borrowed amount)
         // - Collateral value (1 ETH at $2500 = $2500)
         // After our decimal fix, totalAssetValue properly accounts for all asset decimals
         // The value should be much larger than just the borrowed amount
@@ -1268,7 +1265,8 @@ contract LendefiCoreTest is BasicDeploy {
 
         // Update oracle prices to avoid timeout
         wethOracle.setPrice(int256(2000e8)); // Drop ETH price to $2000 per ETH
-        MockPriceOracle usdcOracle = MockPriceOracle(assetsInstance.getAssetInfo(address(usdcInstance)).chainlinkConfig.oracleUSD);
+        MockPriceOracle usdcOracle =
+            MockPriceOracle(assetsInstance.getAssetInfo(address(usdcInstance)).chainlinkConfig.oracleUSD);
         usdcOracle.setPrice(int256(USDC_PRICE)); // Refresh USDC price
 
         // Verify position is liquidatable
@@ -1277,7 +1275,7 @@ contract LendefiCoreTest is BasicDeploy {
         // Calculate expected values
         uint256 debtWithInterest = marketCoreInstance.calculateDebtWithInterest(bob, positionId);
         uint256 accruedInterest = debtWithInterest - initialDebt;
-        
+
         // Verify interest has accrued
         assertTrue(accruedInterest > 0, "Interest should have accrued");
 
@@ -1297,7 +1295,7 @@ contract LendefiCoreTest is BasicDeploy {
         IPROTOCOL.UserPosition memory position = marketCoreInstance.getUserPositions(bob)[0];
         assertEq(uint8(position.status), uint8(IPROTOCOL.PositionStatus.LIQUIDATED));
         assertEq(position.debtAmount, 0);
-        
+
         // Verify totalAccruedBorrowerInterest was updated
         assertEq(
             marketCoreInstance.totalAccruedBorrowerInterest(),
@@ -1328,7 +1326,8 @@ contract LendefiCoreTest is BasicDeploy {
 
         // Update oracle prices to avoid timeout and make positions liquidatable
         wethOracle.setPrice(int256(2100e8)); // Drop ETH price to $2100 per ETH
-        MockPriceOracle usdcOracle = MockPriceOracle(assetsInstance.getAssetInfo(address(usdcInstance)).chainlinkConfig.oracleUSD);
+        MockPriceOracle usdcOracle =
+            MockPriceOracle(assetsInstance.getAssetInfo(address(usdcInstance)).chainlinkConfig.oracleUSD);
         usdcOracle.setPrice(int256(USDC_PRICE)); // Refresh USDC price
 
         // Liquidate first position
@@ -1379,7 +1378,7 @@ contract LendefiCoreTest is BasicDeploy {
         // Borrow close to the limit (80% of $5000 = $4000)
         uint256 borrowAmount = 3900e6; // $3900 USDC
         _borrow(bob, positionId, borrowAmount);
-        
+
         // Advance time and block again before withdrawal
         vm.warp(block.timestamp + 1);
         vm.roll(block.number + 1);
@@ -1388,13 +1387,15 @@ contract LendefiCoreTest is BasicDeploy {
         // Withdrawing 1.5 ETH would leave only 0.5 ETH = $1250 collateral
         // Credit limit would be $1250 * 0.8 = $1000, which is less than debt of $3900
         uint256 withdrawAmount = 1.5 ether;
-        
+
         // Calculate expected credit limit after withdrawal
         uint256 expectedCreditLimit = marketCoreInstance.calculateCreditLimit(bob, positionId);
 
         vm.prank(bob);
         vm.expectRevert(IPROTOCOL.CreditLimitExceeded.selector);
-        marketCoreInstance.withdrawCollateral(address(wethInstance), withdrawAmount, positionId, expectedCreditLimit, 100);
+        marketCoreInstance.withdrawCollateral(
+            address(wethInstance), withdrawAmount, positionId, expectedCreditLimit, 100
+        );
     }
 
     function test_WithdrawCollateral_Success() public {
@@ -1410,7 +1411,7 @@ contract LendefiCoreTest is BasicDeploy {
         // Borrow a moderate amount
         uint256 borrowAmount = 1000e6; // $1000 USDC
         _borrow(bob, positionId, borrowAmount);
-        
+
         // Advance time and block again before withdrawal
         vm.warp(block.timestamp + 1);
         vm.roll(block.number + 1);
@@ -1418,7 +1419,7 @@ contract LendefiCoreTest is BasicDeploy {
         // Withdraw some collateral that still keeps position healthy
         uint256 withdrawAmount = 0.5 ether;
         uint256 balanceBefore = wethInstance.balanceOf(bob);
-        
+
         // Calculate expected credit limit after withdrawal
         uint256 expectedCreditLimit = marketCoreInstance.calculateCreditLimit(bob, positionId);
 
@@ -1426,11 +1427,16 @@ contract LendefiCoreTest is BasicDeploy {
         emit WithdrawCollateral(bob, positionId, address(wethInstance), withdrawAmount);
 
         vm.prank(bob);
-        marketCoreInstance.withdrawCollateral(address(wethInstance), withdrawAmount, positionId, expectedCreditLimit, 100);
+        marketCoreInstance.withdrawCollateral(
+            address(wethInstance), withdrawAmount, positionId, expectedCreditLimit, 100
+        );
 
         // Verify withdrawal
         assertEq(wethInstance.balanceOf(bob), balanceBefore + withdrawAmount);
-        assertEq(marketCoreInstance.getCollateralAmount(bob, positionId, address(wethInstance)), collateralAmount - withdrawAmount);
+        assertEq(
+            marketCoreInstance.getCollateralAmount(bob, positionId, address(wethInstance)),
+            collateralAmount - withdrawAmount
+        );
 
         // Verify position is still healthy
         assertTrue(marketCoreInstance.healthFactor(bob, positionId) > 1e6);
@@ -1451,15 +1457,17 @@ contract LendefiCoreTest is BasicDeploy {
 
         // Calculate expected credit limit (should be 0 since no debt)
         uint256 expectedCreditLimit = marketCoreInstance.calculateCreditLimit(bob, positionId);
-        
+
         // Withdraw all collateral
         vm.prank(bob);
-        marketCoreInstance.withdrawCollateral(address(wethInstance), collateralAmount, positionId, expectedCreditLimit, 100);
+        marketCoreInstance.withdrawCollateral(
+            address(wethInstance), collateralAmount, positionId, expectedCreditLimit, 100
+        );
 
         // Verify full withdrawal
         assertEq(wethInstance.balanceOf(bob), balanceBefore + collateralAmount);
         assertEq(marketCoreInstance.getCollateralAmount(bob, positionId, address(wethInstance)), 0);
-        
+
         // Verify asset was removed from position (for non-isolated positions)
         address[] memory assets = marketCoreInstance.getPositionCollateralAssets(bob, positionId);
         assertEq(assets.length, 0);
