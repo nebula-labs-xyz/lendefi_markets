@@ -116,7 +116,10 @@ contract BasicDeployTest is BasicDeploy {
 
         // Verify market factory deployment
         assertTrue(address(marketFactoryInstance) != address(0), "Market factory should be deployed");
-        assertTrue(marketFactoryInstance.assetsModuleImplementation() != address(0), "Assets module implementation should be set");
+        assertTrue(
+            marketFactoryInstance.assetsModuleImplementation() != address(0),
+            "Assets module implementation should be set"
+        );
         assertEq(marketFactoryInstance.govToken(), address(tokenInstance), "Gov token should be set");
         assertEq(marketFactoryInstance.timelock(), address(timelockInstance), "Timelock should be set");
 
@@ -196,14 +199,14 @@ contract BasicDeployTest is BasicDeploy {
     function test_019_deployMarketVaultUpgrade() public {
         // Deploy the market vault upgrade
         deployMarketVaultUpgrade();
-        
+
         // Additional verification that the upgrade was successful
         assertEq(marketVaultInstance.version(), 2, "Market vault version should be 2 after upgrade");
-        
+
         // Verify basic functionality still works after upgrade
         assertTrue(address(marketVaultInstance) != address(0), "Market vault should be deployed");
         assertEq(marketVaultInstance.asset(), address(usdcInstance), "Asset should still be USDC");
-        
+
         // Log successful upgrade
         console2.log("Market Vault upgraded to V2 successfully");
         console2.log("New version: ", marketVaultInstance.version());
