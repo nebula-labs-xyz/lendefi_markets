@@ -27,8 +27,7 @@ contract ProxyDeployer {
         string memory symbol
     ) public returns (address vaultInstance) {
         address positionVaultImpl = address(new LendefiPositionVault());
-        address marketCore =
-            deployLendefiCoreProxy(timelockInstance, tokenInstance, assetsInstance, positionVaultImpl);
+        address marketCore = deployLendefiCoreProxy(timelockInstance, tokenInstance, assetsInstance, positionVaultImpl);
         // Deploy base contracts first
         bytes memory initData = abi.encodeWithSelector(
             LendefiMarketVault.initialize.selector,
