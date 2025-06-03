@@ -2,7 +2,7 @@
 pragma solidity 0.8.23;
 
 import "../BasicDeploy.sol";
-import {LendefiView} from "../../contracts/markets/LendefiView.sol";
+import {LendefiView} from "../../contracts/markets/helper/LendefiView.sol";
 import {ILENDEFIVIEW} from "../../contracts/interfaces/ILendefiView.sol";
 import {IPROTOCOL} from "../../contracts/interfaces/IProtocol.sol";
 import {IASSETS} from "../../contracts/interfaces/IASSETS.sol";
