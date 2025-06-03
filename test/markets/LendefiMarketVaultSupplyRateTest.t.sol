@@ -83,32 +83,32 @@ contract LendefiMarketVaultSupplyRateTest is Test, BasicDeploy {
 
         // With the new ERC4626-based getSupplyRate(), we can simply check the math directly
         // 1 share should be worth more than 1 asset due to yield, but less than without commission
-        
+
         uint256 shareValue = marketVaultInstance.previewRedeem(1e6); // Value of 1 share
         console2.log("Value of 1 share (1e6):", shareValue);
-        
+
         // Simple math: if 1 share = 1.09 assets, then supply rate = 9%
         // Expected: ~1.09e6 (9% yield after 1% commission)
         uint256 expectedShareValue = 1.09e6; // Approximately
         console2.log("Expected share value (with ~9% net yield):", expectedShareValue);
-        
+
         // Verify that commission is working in the conversion functions
         uint256 sharesFor1Asset = marketVaultInstance.previewDeposit(1e6);
         console2.log("Shares for 1 USDC deposit (should be < 1e6 due to commission):", sharesFor1Asset);
-        
+
         // The new supply rate should reflect the ERC4626 calculation
         uint256 expectedSupplyRate = shareValue > 1e6 ? ((shareValue - 1e6) * 1e6) / 1e6 : 0;
         console2.log("Expected supply rate from ERC4626:", expectedSupplyRate);
         console2.log("Actual supply rate:", newSupplyRate);
-        
-        // Supply rate should be approximately 10% (100,000) because existing shareholders 
+
+        // Supply rate should be approximately 10% (100,000) because existing shareholders
         // get the full benefit. Commission affects new deposits/withdrawals, not existing share values.
         assertTrue(newSupplyRate > 95000, "Supply rate should be close to 10%");
         assertTrue(newSupplyRate < 105000, "Supply rate should be close to 10%");
-        
+
         // Supply rate should increase due to yield
         assertGt(newSupplyRate, initialSupplyRate, "Supply rate should increase after yield boost");
-        
+
         // The conversion rate should reflect commission
         assertLt(sharesFor1Asset, 1e6, "Shares received should be less than 1:1 due to commission");
     }
