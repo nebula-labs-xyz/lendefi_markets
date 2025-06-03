@@ -85,6 +85,20 @@ interface ILendefiMarketFactory {
      */
     event UpgradeCancelled(address indexed canceller, address indexed implementation);
 
+    /**
+     * @notice Emitted when a base asset is added to the allowlist
+     * @param baseAsset The base asset address that was added
+     * @param admin The address that performed the addition
+     */
+    event BaseAssetAdded(address indexed baseAsset, address indexed admin);
+
+    /**
+     * @notice Emitted when a base asset is removed from the allowlist
+     * @param baseAsset The base asset address that was removed
+     * @param admin The address that performed the removal
+     */
+    event BaseAssetRemoved(address indexed baseAsset, address indexed admin);
+
     // ========== ERRORS ==========
 
     /// @notice Thrown when attempting to create a market for an owner/asset pair that already exists
@@ -114,6 +128,9 @@ interface ILendefiMarketFactory {
     /// @param attemptedImpl The address that was attempted to be used
     error ImplementationMismatch(address scheduledImpl, address attemptedImpl);
 
+    /// @notice Thrown when attempting to create a market with a base asset that is not on the allowlist
+    error BaseAssetNotAllowed();
+
     // ========== INITIALIZATION ==========
 
     /**
@@ -142,6 +159,18 @@ interface ILendefiMarketFactory {
         address _assetsModuleImplementation,
         address _PoRFeed
     ) external;
+
+    /**
+     * @notice Adds a base asset to the allowlist for market creation
+     * @param baseAsset Address of the base asset to add to the allowlist
+     */
+    function addAllowedBaseAsset(address baseAsset) external;
+
+    /**
+     * @notice Removes a base asset from the allowlist for market creation
+     * @param baseAsset Address of the base asset to remove from the allowlist
+     */
+    function removeAllowedBaseAsset(address baseAsset) external;
 
     // ========== MARKET MANAGEMENT ==========
 
@@ -302,4 +331,22 @@ interface ILendefiMarketFactory {
      */
     function allMarketOwners(uint256 index) external view returns (address);
 
+    /**
+     * @notice Checks if a base asset is allowed for market creation
+     * @param baseAsset Address of the base asset to check
+     * @return True if the base asset is in the allowlist, false otherwise
+     */
+    function isBaseAssetAllowed(address baseAsset) external view returns (bool);
+
+    /**
+     * @notice Returns all allowed base assets
+     * @return Array of all allowed base asset addresses
+     */
+    function getAllowedBaseAssets() external view returns (address[] memory);
+
+    /**
+     * @notice Returns the number of allowed base assets
+     * @return The count of allowed base assets
+     */
+    function getAllowedBaseAssetsCount() external view returns (uint256);
 }
