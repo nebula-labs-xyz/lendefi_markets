@@ -62,7 +62,6 @@ contract LendefiCoreV2 is
     /// @notice Address of the governance token contract
     address public govToken;
 
-
     /// @notice Address of the base asset for this market (e.g., USDC)
     address public baseAsset;
 
@@ -164,12 +163,10 @@ contract LendefiCoreV2 is
     /// @param govToken_ Address of the governance token contract
     /// @param assetsModule_ Address of the assets module for collateral management
     /// @param positionVault Address of the cloneable vault implementation
-    function initialize(
-        address admin,
-        address govToken_,
-        address assetsModule_,
-        address positionVault
-    ) external initializer {
+    function initialize(address admin, address govToken_, address assetsModule_, address positionVault)
+        external
+        initializer
+    {
         if (admin == address(0)) revert ZeroAddressNotAllowed();
         if (assetsModule_ == address(0)) revert ZeroAddressNotAllowed();
         if (govToken_ == address(0)) revert ZeroAddressNotAllowed();
