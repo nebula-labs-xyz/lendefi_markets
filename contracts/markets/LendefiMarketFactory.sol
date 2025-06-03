@@ -92,6 +92,11 @@ contract LendefiMarketFactory is ILendefiMarketFactory, Initializable, AccessCon
     /// @dev Handles governance token rewards for liquidity providers
     address public ecosystem;
 
+    /// @notice Set of approved base assets that can be used for market creation
+    /// @dev Only assets in this allowlist can be used to create new markets
+    /// @dev Ensures only tested and verified assets are supported by the protocol
+    EnumerableSet.AddressSet private allowedBaseAssets;
+
     /// @notice Nested mapping of market owner to base asset to market configuration
     /// @dev First key: market owner address, Second key: base asset address, Value: Market struct
     mapping(address => mapping(address => IPROTOCOL.Market)) internal markets;
@@ -113,6 +118,15 @@ contract LendefiMarketFactory is ILendefiMarketFactory, Initializable, AccessCon
 
     // Storage gap reduced to account for new variables
     uint256[14] private __gap;
+
+    // ========== MODIFIERS ==========
+
+    /// @notice Ensures the base asset is on the allowlist for market creation
+    /// @param baseAsset Address of the base asset to validate
+    modifier onlyAllowedBaseAsset(address baseAsset) {
+        if (!allowedBaseAssets.contains(baseAsset)) revert BaseAssetNotAllowed();
+        _;
+    }
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -156,6 +170,7 @@ contract LendefiMarketFactory is ILendefiMarketFactory, Initializable, AccessCon
 
         _grantRole(DEFAULT_ADMIN_ROLE, _timelock);
         _grantRole(LendefiConstants.UPGRADER_ROLE, _timelock);
+        _grantRole(LendefiConstants.MANAGER_ROLE, _multisig);
 
         govToken = _govToken;
         timelock = _timelock;
@@ -210,6 +225,62 @@ contract LendefiMarketFactory is ILendefiMarketFactory, Initializable, AccessCon
         emit ImplementationsSet(_coreImplementation, _vaultImplementation, _positionVaultImplementation);
     }
 
+    /**
+     * @notice Adds a base asset to the allowlist for market creation
+     * @dev Allows the specified base asset to be used for creating new markets.
+     *      Only assets that have been tested and verified should be added to ensure protocol security.
+     * @param baseAsset Address of the base asset to add to the allowlist
+     *
+     * @custom:requirements
+     *   - Caller must have DEFAULT_ADMIN_ROLE
+     *   - baseAsset must be a valid address (non-zero)
+     *   - baseAsset must not already be in the allowlist
+     *
+     * @custom:state-changes
+     *   - Adds baseAsset to the allowedBaseAssets EnumerableSet
+     *
+     * @custom:emits BaseAssetAdded event with the asset address and admin
+     * @custom:access-control Restricted to MANAGER_ROLE
+     * @custom:error-cases
+     *   - ZeroAddress: When baseAsset is the zero address
+     */
+    function addAllowedBaseAsset(address baseAsset) external onlyRole(LendefiConstants.MANAGER_ROLE) {
+        if (baseAsset == address(0)) revert ZeroAddress();
+
+        bool added = allowedBaseAssets.add(baseAsset);
+        if (added) {
+            emit BaseAssetAdded(baseAsset, msg.sender);
+        }
+    }
+
+    /**
+     * @notice Removes a base asset from the allowlist for market creation
+     * @dev Prevents the specified base asset from being used for creating new markets.
+     *      Existing markets with this base asset will continue to operate normally.
+     * @param baseAsset Address of the base asset to remove from the allowlist
+     *
+     * @custom:requirements
+     *   - Caller must have DEFAULT_ADMIN_ROLE
+     *   - baseAsset must be a valid address (non-zero)
+     *   - baseAsset must currently be in the allowlist
+     *
+     * @custom:state-changes
+     *   - Removes baseAsset from the allowedBaseAssets EnumerableSet
+     *
+     * @custom:emits BaseAssetRemoved event with the asset address and admin
+     * @custom:access-control Restricted to MANAGER_ROLE
+     * @custom:error-cases
+     *   - ZeroAddress: When baseAsset is the zero address
+     */
+    function removeAllowedBaseAsset(address baseAsset) external onlyRole(LendefiConstants.MANAGER_ROLE) {
+        if (baseAsset == address(0)) revert ZeroAddress();
+
+        bool removed = allowedBaseAssets.remove(baseAsset);
+        if (removed) {
+            emit BaseAssetRemoved(baseAsset, msg.sender);
+        }
+    }
+
     // ========== MARKET MANAGEMENT ==========
 
     /**
@@ -251,6 +322,7 @@ contract LendefiMarketFactory is ILendefiMarketFactory, Initializable, AccessCon
     function createMarket(address baseAsset, string memory name, string memory symbol)
         external
         onlyRole(LendefiConstants.MARKET_OWNER_ROLE)
+        onlyAllowedBaseAsset(baseAsset)
     {
         address marketOwner = msg.sender;
         if (baseAsset == address(0)) revert ZeroAddress();
@@ -555,6 +627,46 @@ contract LendefiMarketFactory is ILendefiMarketFactory, Initializable, AccessCon
      */
     function getTotalMarketsCount() external view returns (uint256) {
         return allMarkets.length;
+    }
+
+    /**
+     * @notice Checks if a base asset is allowed for market creation
+     * @dev Verifies whether the specified base asset is in the allowlist.
+     *      Market owners can only create markets for assets that are in the allowlist.
+     * @param baseAsset Address of the base asset to check
+     * @return True if the base asset is in the allowlist, false otherwise
+     *
+     * @custom:access-control Available to any caller (view function)
+     * @custom:gas-efficient Uses EnumerableSet's efficient contains() method
+     */
+    function isBaseAssetAllowed(address baseAsset) external view returns (bool) {
+        return allowedBaseAssets.contains(baseAsset);
+    }
+
+    /**
+     * @notice Returns all allowed base assets
+     * @dev Retrieves the complete list of base assets that can be used for market creation.
+     *      This function is useful for UI applications to display available options.
+     * @return Array of all allowed base asset addresses
+     *
+     * @custom:access-control Available to any caller (view function)
+     * @custom:gas-considerations May be expensive for large allowlists; consider pagination for UI
+     */
+    function getAllowedBaseAssets() external view returns (address[] memory) {
+        return allowedBaseAssets.values();
+    }
+
+    /**
+     * @notice Returns the number of allowed base assets
+     * @dev Provides the count of assets in the allowlist without returning the full array.
+     *      Useful for pagination and gas-efficient checks.
+     * @return The count of allowed base assets
+     *
+     * @custom:access-control Available to any caller (view function)
+     * @custom:gas-efficient Constant time operation regardless of allowlist size
+     */
+    function getAllowedBaseAssetsCount() external view returns (uint256) {
+        return allowedBaseAssets.length();
     }
 
     // ========== UUPS UPGRADE AUTHORIZATION ==========
