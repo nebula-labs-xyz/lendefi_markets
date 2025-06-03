@@ -741,7 +741,7 @@ contract BasicDeploy is Test {
         marketFactoryInstance = LendefiMarketFactory(factoryProxy);
 
         // Set implementations - pass the implementation address, NOT the proxy
-        vm.prank(address(timelockInstance));
+        vm.startPrank(address(timelockInstance));
         marketFactoryInstance.setImplementations(
             address(coreImpl),
             address(marketVaultImpl),
@@ -749,6 +749,7 @@ contract BasicDeploy is Test {
             address(assetsImpl),
             address(porFeedImpl)
         );
+        vm.stopPrank();
     }
 
     /**
@@ -765,10 +766,13 @@ contract BasicDeploy is Test {
         require(marketFactoryInstance.coreImplementation() != address(0), "Core implementation not set");
         require(marketFactoryInstance.vaultImplementation() != address(0), "Vault implementation not set");
 
-        // Grant MARKET_OWNER_ROLE to charlie (must be done by timelock since it has DEFAULT_ADMIN_ROLE)
-        vm.startPrank(address(timelockInstance));
+        // Grant MARKET_OWNER_ROLE to charlie (done by timelock which has DEFAULT_ADMIN_ROLE)
+        vm.prank(address(timelockInstance));
         marketFactoryInstance.grantRole(LendefiConstants.MARKET_OWNER_ROLE, charlie);
-        vm.stopPrank();
+
+        // Add base asset to allowlist (done by multisig which has MANAGER_ROLE)
+        vm.prank(gnosisSafe);
+        marketFactoryInstance.addAllowedBaseAsset(baseAsset);
 
         // Create market via factory (charlie as market owner)
         vm.prank(charlie);
