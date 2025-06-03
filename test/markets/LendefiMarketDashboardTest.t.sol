@@ -2,7 +2,7 @@
 pragma solidity 0.8.23;
 
 import "../BasicDeploy.sol";
-import {LendefiMarketDashboard} from "../../contracts/markets/LendefiMarketDashboard.sol";
+import {LendefiMarketDashboard} from "../../contracts/markets/helper/LendefiMarketDashboard.sol";
 import {ILendefiMarketDashboard} from "../../contracts/interfaces/ILendefiMarketDashboard.sol";
 import {ILendefiMarketVault} from "../../contracts/interfaces/ILendefiMarketVault.sol";
 import {LendefiMarketFactory} from "../../contracts/markets/LendefiMarketFactory.sol";
