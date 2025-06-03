@@ -22,6 +22,12 @@ contract MarketFactoryTest is BasicDeploy {
         baseAsset1 = new TokenMock("Test Token 1", "TEST1");
         baseAsset2 = new TokenMock("Test Token 2", "TEST2");
 
+        // Add test assets to allowlist (gnosisSafe has MANAGER_ROLE)
+        vm.startPrank(gnosisSafe);
+        marketFactoryInstance.addAllowedBaseAsset(address(baseAsset1));
+        marketFactoryInstance.addAllowedBaseAsset(address(baseAsset2));
+        vm.stopPrank();
+
         // Setup TGE for proper functionality
         vm.prank(guardian);
         tokenInstance.initializeTGE(address(ecoInstance), address(treasuryInstance));
@@ -60,7 +66,7 @@ contract MarketFactoryTest is BasicDeploy {
 
     function testCannotCreateMarketWithZeroAddress() public {
         vm.prank(charlie);
-        vm.expectRevert(abi.encodeWithSignature("ZeroAddress()"));
+        vm.expectRevert(abi.encodeWithSignature("BaseAssetNotAllowed()"));
         marketFactoryInstance.createMarket(address(0), "Test Market", "TMKT");
     }
 
