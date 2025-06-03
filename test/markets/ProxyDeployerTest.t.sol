@@ -13,18 +13,18 @@ contract ProxyDeployerTest is BasicDeploy {
         // Deploy base contracts
         deployComplete();
         _deployAssetsModule();
-        
+
         // Deploy proxy deployer
         proxyDeployer = new ProxyDeployer();
-        
+
         // Deploy test token
         testToken = new TokenMock("Test Token", "TEST");
-        
+
         // Setup TGE
         vm.prank(guardian);
         tokenInstance.initializeTGE(address(ecoInstance), address(treasuryInstance));
     }
-    
+
     function test_deployMarketVaultProxy() public {
         // Call the function
         address vaultProxy = proxyDeployer.deployMarketVaultProxy(
@@ -36,10 +36,10 @@ contract ProxyDeployerTest is BasicDeploy {
             "Test Vault",
             "TV"
         );
-        
+
         // Validate it returns a valid address
         assertTrue(vaultProxy != address(0), "Should return valid address");
-        
+
         // Verify it's a contract
         uint256 codeSize;
         assembly {
